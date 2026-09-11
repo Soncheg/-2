@@ -1,3 +1,869 @@
-<Solution>
-  <Project Path="задача 3.csproj" />
-</Solution>
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace Task3_OperatorOverloading
+{
+    /// <summary>
+    /// Пользовательское исключение для матричных операций
+    /// </summary>
+    public class MatrixException : Exception
+    {
+        public MatrixException() : base() { }
+        public MatrixException(string message) : base(message) { }
+        public MatrixException(string message, Exception innerException) : base(message, innerException) { }
+    }
+
+    /// <summary>
+    /// Исключение для несовместимых размеров матриц
+    /// </summary>
+    public class MatrixDimensionException : MatrixException
+    {
+        public MatrixDimensionException(string message) : base(message) { }
+    }
+
+    /// <summary>
+    /// Исключение для вырожденных матриц (детерминант = 0)
+    /// </summary>
+    public class SingularMatrixException : MatrixException
+    {
+        public SingularMatrixException(string message) : base(message) { }
+    }
+
+    /// <summary>
+    /// Класс "Квадратная матрица" с перегрузкой операций
+    /// </summary>
+    public class SquareMatrix : ICloneable, IComparable<SquareMatrix>
+    {
+        private double[,] _elements;
+        private int _size;
+
+        public int Size => _size;
+
+        public double this[int row, int col]
+        {
+            get
+            {
+                ValidateIndexes(row, col);
+                return _elements[row, col];
+            }
+            set
+            {
+                ValidateIndexes(row, col);
+                _elements[row, col] = value;
+            }
+        }
+
+        #region Конструкторы
+
+        public SquareMatrix(int size)
+        {
+            if (size <= 0)
+                throw new MatrixException("Размер матрицы должен быть положительным");
+
+            _size = size;
+            _elements = new double[size, size];
+        }
+
+        public SquareMatrix(double[,] elements)
+        {
+            if (elements == null)
+                throw new ArgumentNullException(nameof(elements));
+
+            int rows = elements.GetLength(0);
+            int cols = elements.GetLength(1);
+
+            if (rows != cols || rows == 0)
+                throw new MatrixException("Массив должен быть квадратным и непустым");
+
+            _size = rows;
+            _elements = (double[,])elements.Clone();
+        }
+
+        public SquareMatrix(SquareMatrix other)
+        {
+            if (other == null)
+                throw new ArgumentNullException(nameof(other));
+
+            _size = other._size;
+            _elements = (double[,])other._elements.Clone();
+        }
+
+        public SquareMatrix(int size, double minValue, double maxValue) : this(size)
+        {
+            Random rand = new Random();
+
+            for (int i = 0; i < _size; i++)
+            {
+                for (int j = 0; j < _size; j++)
+                {
+                    _elements[i, j] = minValue + (maxValue - minValue) * rand.NextDouble();
+                }
+            }
+        }
+
+        public static SquareMatrix Identity(int size)
+        {
+            SquareMatrix result = new SquareMatrix(size);
+
+            for (int i = 0; i < size; i++)
+            {
+                result[i, i] = 1.0;
+            }
+
+            return result;
+        }
+
+        #endregion
+
+        #region Вспомогательные методы
+
+        private void ValidateIndexes(int row, int col)
+        {
+            if (row < 0 || row >= _size || col < 0 || col >= _size)
+                throw new IndexOutOfRangeException($"Индексы должны быть в диапазоне [0, {_size - 1}]");
+        }
+
+        #endregion
+
+        #region Перегрузка арифметических операций
+
+        public static SquareMatrix operator +(SquareMatrix a, SquareMatrix b)
+        {
+            if (a == null || b == null)
+                throw new ArgumentNullException();
+
+            if (a._size != b._size)
+                throw new MatrixDimensionException($"Размеры матриц не совпадают: {a._size} и {b._size}");
+
+            SquareMatrix result = new SquareMatrix(a._size);
+
+            for (int i = 0; i < a._size; i++)
+            {
+                for (int j = 0; j < a._size; j++)
+                {
+                    result[i, j] = a[i, j] + b[i, j];
+                }
+            }
+
+            return result;
+        }
+
+        public static SquareMatrix operator *(SquareMatrix a, SquareMatrix b)
+        {
+            if (a == null || b == null)
+                throw new ArgumentNullException();
+
+            if (a._size != b._size)
+                throw new MatrixDimensionException($"Размеры матриц не совпадают: {a._size} и {b._size}");
+
+            SquareMatrix result = new SquareMatrix(a._size);
+
+            for (int i = 0; i < a._size; i++)
+            {
+                for (int j = 0; j < a._size; j++)
+                {
+                    double sum = 0;
+                    for (int k = 0; k < a._size; k++)
+                    {
+                        sum += a[i, k] * b[k, j];
+                    }
+                    result[i, j] = sum;
+                }
+            }
+
+            return result;
+        }
+
+        public static SquareMatrix operator *(SquareMatrix a, double scalar)
+        {
+            if (a == null)
+                throw new ArgumentNullException();
+
+            SquareMatrix result = new SquareMatrix(a._size);
+
+            for (int i = 0; i < a._size; i++)
+            {
+                for (int j = 0; j < a._size; j++)
+                {
+                    result[i, j] = a[i, j] * scalar;
+                }
+            }
+
+            return result;
+        }
+
+        public static SquareMatrix operator *(double scalar, SquareMatrix a)
+        {
+            return a * scalar;
+        }
+
+        #endregion
+
+        #region Перегрузка операторов сравнения
+
+        public static bool operator >(SquareMatrix a, SquareMatrix b)
+        {
+            if (a == null || b == null)
+                throw new ArgumentNullException();
+
+            return a.Determinant() > b.Determinant();
+        }
+
+        public static bool operator <(SquareMatrix a, SquareMatrix b)
+        {
+            if (a == null || b == null)
+                throw new ArgumentNullException();
+
+            return a.Determinant() < b.Determinant();
+        }
+
+        public static bool operator >=(SquareMatrix a, SquareMatrix b)
+        {
+            if (a == null || b == null)
+                throw new ArgumentNullException();
+
+            return a.Determinant() >= b.Determinant();
+        }
+
+        public static bool operator <=(SquareMatrix a, SquareMatrix b)
+        {
+            if (a == null || b == null)
+                throw new ArgumentNullException();
+
+            return a.Determinant() <= b.Determinant();
+        }
+
+        public static bool operator ==(SquareMatrix a, SquareMatrix b)
+        {
+            if (ReferenceEquals(a, b))
+                return true;
+
+            if (a is null || b is null)
+                return false;
+
+            if (a._size != b._size)
+                return false;
+
+            for (int i = 0; i < a._size; i++)
+            {
+                for (int j = 0; j < a._size; j++)
+                {
+                    if (Math.Abs(a[i, j] - b[i, j]) > 1e-10)
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        public static bool operator !=(SquareMatrix a, SquareMatrix b)
+        {
+            return !(a == b);
+        }
+
+        #endregion
+
+        #region Перегрузка операторов true/false
+
+        public static bool operator true(SquareMatrix a)
+        {
+            if (a is null)
+                return false;
+
+            return Math.Abs(a.Determinant()) > 1e-10;
+        }
+
+        public static bool operator false(SquareMatrix a)
+        {
+            if (a is null)
+                return true;
+
+            return Math.Abs(a.Determinant()) <= 1e-10;
+        }
+
+        #endregion
+
+        #region Перегрузка операторов приведения типов
+
+        public static explicit operator double[,](SquareMatrix matrix)
+        {
+            if (matrix is null)
+                throw new ArgumentNullException();
+
+            return (double[,])matrix._elements.Clone();
+        }
+
+        public static implicit operator SquareMatrix(double[,] array)
+        {
+            return new SquareMatrix(array);
+        }
+
+        #endregion
+
+        #region Математические операции
+
+        public double Determinant()
+        {
+            double[,] temp = (double[,])_elements.Clone();
+            int n = _size;
+            double det = 1.0;
+
+            for (int i = 0; i < n; i++)
+            {
+                int maxRow = i;
+                for (int k = i + 1; k < n; k++)
+                {
+                    if (Math.Abs(temp[k, i]) > Math.Abs(temp[maxRow, i]))
+                    {
+                        maxRow = k;
+                    }
+                }
+
+                if (Math.Abs(temp[maxRow, i]) < 1e-10)
+                {
+                    return 0;
+                }
+
+                if (maxRow != i)
+                {
+                    for (int j = 0; j < n; j++)
+                    {
+                        double swap = temp[i, j];
+                        temp[i, j] = temp[maxRow, j];
+                        temp[maxRow, j] = swap;
+                    }
+                    det *= -1;
+                }
+
+                for (int k = i + 1; k < n; k++)
+                {
+                    double factor = temp[k, i] / temp[i, i];
+                    for (int j = i; j < n; j++)
+                    {
+                        temp[k, j] -= factor * temp[i, j];
+                    }
+                }
+
+                det *= temp[i, i];
+            }
+
+            return det;
+        }
+
+        public SquareMatrix Inverse()
+        {
+            double det = Determinant();
+
+            if (Math.Abs(det) < 1e-10)
+                throw new SingularMatrixException("Матрица вырожденная (детерминант равен 0)");
+
+            int n = _size;
+            double[,] augmented = new double[n, 2 * n];
+
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    augmented[i, j] = _elements[i, j];
+                }
+                augmented[i, n + i] = 1.0;
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                int maxRow = i;
+                for (int k = i + 1; k < n; k++)
+                {
+                    if (Math.Abs(augmented[k, i]) > Math.Abs(augmented[maxRow, i]))
+                    {
+                        maxRow = k;
+                    }
+                }
+
+                for (int j = 0; j < 2 * n; j++)
+                {
+                    double swap = augmented[i, j];
+                    augmented[i, j] = augmented[maxRow, j];
+                    augmented[maxRow, j] = swap;
+                }
+
+                double pivot = augmented[i, i];
+                if (Math.Abs(pivot) < 1e-10)
+                    throw new SingularMatrixException("Матрица вырожденная");
+
+                for (int j = 0; j < 2 * n; j++)
+                {
+                    augmented[i, j] /= pivot;
+                }
+
+                for (int k = 0; k < n; k++)
+                {
+                    if (k != i)
+                    {
+                        double factor = augmented[k, i];
+                        for (int j = 0; j < 2 * n; j++)
+                        {
+                            augmented[k, j] -= factor * augmented[i, j];
+                        }
+                    }
+                }
+            }
+
+            double[,] inverse = new double[n, n];
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    inverse[i, j] = augmented[i, n + j];
+                }
+            }
+
+            return new SquareMatrix(inverse);
+        }
+
+        public SquareMatrix Transpose()
+        {
+            SquareMatrix result = new SquareMatrix(_size);
+
+            for (int i = 0; i < _size; i++)
+            {
+                for (int j = 0; j < _size; j++)
+                {
+                    result[j, i] = _elements[i, j];
+                }
+            }
+
+            return result;
+        }
+
+        #endregion
+
+        #region Реализация интерфейсов
+
+        public object Clone()
+        {
+            return new SquareMatrix(this);
+        }
+
+        public int CompareTo(SquareMatrix other)
+        {
+            if (other is null)
+                return 1;
+
+            return Determinant().CompareTo(other.Determinant());
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is SquareMatrix matrix)
+            {
+                return this == matrix;
+            }
+            return false;
+        }
+
+        public override int GetHashCode()
+        {
+            int hash = _size.GetHashCode();
+
+            for (int i = 0; i < _size; i++)
+            {
+                for (int j = 0; j < _size; j++)
+                {
+                    hash = hash * 31 + _elements[i, j].GetHashCode();
+                }
+            }
+
+            return hash;
+        }
+
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine($"  Матрица {_size}x{_size}:");
+            sb.AppendLine("  ┌" + new string(' ', _size * 10 - 1) + "┐");
+
+            for (int i = 0; i < _size; i++)
+            {
+                sb.Append("  │ ");
+                for (int j = 0; j < _size; j++)
+                {
+                    sb.Append($"{_elements[i, j],8:F3} ");
+                }
+                sb.AppendLine("│");
+            }
+
+            sb.AppendLine("  └" + new string(' ', _size * 10 - 1) + "┘");
+            sb.AppendLine($"  Детерминант: {Determinant():F3}");
+
+            return sb.ToString();
+        }
+
+        #endregion
+    }
+
+    /// <summary>
+    /// Тестовое приложение "Матричный калькулятор"
+    /// </summary>
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.Title = "Задание 3 - Перегрузка операций";
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                   ЗАДАНИЕ 3 - ПЕРЕГРУЗКА ОПЕРАЦИЙ                     ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            bool exit = false;
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                        МАТРИЧНЫЙ КАЛЬКУЛЯТОР                          ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine("  1. Демонстрация всех операций");
+                Console.WriteLine("  2. Создать матрицу вручную");
+                Console.WriteLine("  3. Создать случайную матрицу");
+                Console.WriteLine("  4. Показать примеры исключений");
+                Console.WriteLine("  5. Выйти");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                switch (choice)
+                {
+                    case "1":
+                        DemoAllOperations();
+                        break;
+                    case "2":
+                        CreateManualMatrix();
+                        break;
+                    case "3":
+                        CreateRandomMatrix();
+                        break;
+                    case "4":
+                        DemoExceptions();
+                        break;
+                    case "5":
+                        exit = true;
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("\n  До свидания!");
+                        Console.ResetColor();
+                        break;
+                    default:
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("\n  ❌ Неверный выбор! Нажмите любую клавишу...");
+                        Console.ResetColor();
+                        Console.ReadKey();
+                        break;
+                }
+            }
+        }
+
+        static void DemoAllOperations()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                      ДЕМОНСТРАЦИЯ ОПЕРАЦИЙ                            ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            try
+            {
+                // Создание матриц
+                double[,] arrayA = {
+                    { 1, 2, 3 },
+                    { 4, 5, 6 },
+                    { 7, 8, 10 }
+                };
+
+                SquareMatrix A = new SquareMatrix(arrayA);
+                SquareMatrix B = new SquareMatrix(3, -5, 5);
+                SquareMatrix I = SquareMatrix.Identity(3);
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  Матрица A:");
+                Console.ResetColor();
+                Console.WriteLine(A);
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  Матрица B (случайная):");
+                Console.ResetColor();
+                Console.WriteLine(B);
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  Единичная матрица I:");
+                Console.ResetColor();
+                Console.WriteLine(I);
+
+                // Сложение
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  A + B:");
+                Console.ResetColor();
+                Console.WriteLine(A + B);
+
+                // Умножение
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  A * B:");
+                Console.ResetColor();
+                Console.WriteLine(A * B);
+
+                // Умножение на скаляр
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  A * 2.5:");
+                Console.ResetColor();
+                Console.WriteLine(A * 2.5);
+
+                // Транспонирование
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  Транспонирование A:");
+                Console.ResetColor();
+                Console.WriteLine(A.Transpose());
+
+                // Сравнение
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  Сравнение матриц (по детерминанту):");
+                Console.ResetColor();
+                Console.WriteLine($"  Детерминант A: {A.Determinant():F3}");
+                Console.WriteLine($"  Детерминант B: {B.Determinant():F3}");
+                Console.WriteLine($"  A > B: {A > B}");
+                Console.WriteLine($"  A < B: {A < B}");
+                Console.WriteLine($"  A == B: {A == B}");
+
+                // Операторы true/false
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("\n  Операторы true/false:");
+                Console.ResetColor();
+                Console.WriteLine($"  A истинная (невырожденная): {(A ? "Да" : "Нет")}");
+                Console.WriteLine($"  B истинная (невырожденная): {(B ? "Да" : "Нет")}");
+
+                // Обратная матрица
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("\n  Обратная матрица A:");
+                Console.ResetColor();
+                SquareMatrix inverse = A.Inverse();
+                Console.WriteLine(inverse);
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  Проверка: A * A^(-1) = I");
+                Console.ResetColor();
+                SquareMatrix check = A * inverse;
+                Console.WriteLine(check);
+
+                // Клонирование
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  Паттерн Прототип (глубокое копирование):");
+                Console.ResetColor();
+                SquareMatrix original = new SquareMatrix(2, -5, 5);
+                Console.WriteLine("  Оригинальная матрица:");
+                Console.WriteLine(original);
+
+                SquareMatrix copy = (SquareMatrix)original.Clone();
+                Console.WriteLine("  Копия матрицы:");
+                Console.WriteLine(copy);
+
+                original[0, 0] = 999;
+                Console.WriteLine("  После изменения оригинала [0,0] = 999:");
+                Console.WriteLine("  Оригинал:");
+                Console.WriteLine(original);
+                Console.WriteLine("  Копия (не изменилась):");
+                Console.WriteLine(copy);
+
+                // Приведение типов
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  Приведение типов:");
+                Console.ResetColor();
+                double[,] array = (double[,])A;
+                Console.WriteLine($"  Приведение матрицы к массиву: {array.GetLength(0)}x{array.GetLength(1)}");
+
+                SquareMatrix fromArray = array;
+                Console.WriteLine("  Приведение массива к матрице:");
+                Console.WriteLine(fromArray);
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"  ❌ Ошибка: {ex.Message}");
+                Console.ResetColor();
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+            Console.ReadKey();
+        }
+
+        static void CreateManualMatrix()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                      СОЗДАНИЕ МАТРИЦЫ ВРУЧНУЮ                         ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            try
+            {
+                Console.Write("  Введите размер матрицы: ");
+                int size = int.Parse(Console.ReadLine());
+
+                double[,] elements = new double[size, size];
+
+                Console.WriteLine($"\n  Введите элементы матрицы {size}x{size}:");
+                for (int i = 0; i < size; i++)
+                {
+                    for (int j = 0; j < size; j++)
+                    {
+                        Console.Write($"  [{i},{j}]: ");
+                        elements[i, j] = double.Parse(Console.ReadLine());
+                    }
+                }
+
+                SquareMatrix matrix = new SquareMatrix(elements);
+                Console.WriteLine();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("  ✅ Матрица создана:");
+                Console.ResetColor();
+                Console.WriteLine(matrix);
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"  ❌ Ошибка: {ex.Message}");
+                Console.ResetColor();
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+            Console.ReadKey();
+        }
+
+        static void CreateRandomMatrix()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                      СОЗДАНИЕ СЛУЧАЙНОЙ МАТРИЦЫ                       ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            try
+            {
+                Console.Write("  Введите размер матрицы: ");
+                int size = int.Parse(Console.ReadLine());
+
+                Console.Write("  Введите минимальное значение: ");
+                double min = double.Parse(Console.ReadLine());
+
+                Console.Write("  Введите максимальное значение: ");
+                double max = double.Parse(Console.ReadLine());
+
+                SquareMatrix matrix = new SquareMatrix(size, min, max);
+                Console.WriteLine();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("  ✅ Случайная матрица создана:");
+                Console.ResetColor();
+                Console.WriteLine(matrix);
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"  ❌ Ошибка: {ex.Message}");
+                Console.ResetColor();
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+            Console.ReadKey();
+        }
+
+        static void DemoExceptions()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                      ПРИМЕРЫ ИСКЛЮЧЕНИЙ                               ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            try
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  Пример 1: Создание вырожденной матрицы");
+                Console.ResetColor();
+
+                SquareMatrix singular = new SquareMatrix(2);
+                singular[0, 0] = 1;
+                singular[0, 1] = 2;
+                singular[1, 0] = 2;
+                singular[1, 1] = 4;
+
+                Console.WriteLine(singular);
+                Console.WriteLine($"  Детерминант: {singular.Determinant():F3}");
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("\n  Попытка найти обратную матрицу:");
+                Console.ResetColor();
+
+                SquareMatrix inv = singular.Inverse();
+            }
+            catch (SingularMatrixException ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"  ❌ Исключение: {ex.Message}");
+                Console.ResetColor();
+            }
+
+            try
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("\n  Пример 2: Сложение матриц разных размеров");
+                Console.ResetColor();
+
+                SquareMatrix A = new SquareMatrix(2);
+                SquareMatrix B = new SquareMatrix(3);
+                SquareMatrix C = A + B;
+            }
+            catch (MatrixDimensionException ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"  ❌ Исключение: {ex.Message}");
+                Console.ResetColor();
+            }
+
+            try
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("\n  Пример 3: Создание матрицы с неверным размером");
+                Console.ResetColor();
+
+                double[,] wrongArray = new double[2, 3];
+                SquareMatrix D = new SquareMatrix(wrongArray);
+            }
+            catch (MatrixException ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"  ❌ Исключение: {ex.Message}");
+                Console.ResetColor();
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+            Console.ReadKey();
+        }
+    }
+}
