@@ -1,3 +1,584 @@
-<Solution>
-  <Project Path="задача 5.csproj" />
-</Solution>
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Linq;
+
+namespace Task5_StringsAndCollections
+{
+    /// <summary>
+    /// Класс для хранения словаря ошибочных слов
+    /// </summary>
+    public class ErrorWordsDictionary
+    {
+        private Dictionary<string, string> _dictionary;
+
+        public ErrorWordsDictionary()
+        {
+            _dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            LoadDefaultDictionary();
+        }
+
+        private void LoadDefaultDictionary()
+        {
+            AddWord("привет", "првиет", "пирвет", "превед", "привит", "првет");
+            AddWord("здравствуйте", "здраствуйте", "здраствуйте");
+            AddWord("пока", "пака", "пок", "покаа");
+            AddWord("спасибо", "спосибо", "спасиба", "спс");
+            AddWord("пожалуйста", "пожалйста", "пажалуйста", "пжалуйста");
+            AddWord("извините", "извинтие", "извените");
+            AddWord("здорово", "здарова", "здорова");
+            AddWord("хорошо", "харашо", "хорош", "хороше");
+            AddWord("плохо", "плоха", "плох");
+            AddWord("сегодня", "севодня", "сегодьня", "сегоня");
+            AddWord("завтра", "завтро");
+            AddWord("вчера", "вчера", "вчира");
+            AddWord("телефон", "тилефон");
+            AddWord("компьютер", "компютер", "компъютер");
+            AddWord("интернет", "инет", "интернет");
+            AddWord("программа", "програма", "праграма");
+            AddWord("документ", "дакумент", "документ");
+            AddWord("файл", "файл", "фаил");
+            AddWord("папка", "папка", "папка");
+            AddWord("мышь", "мыш", "мышь");
+            AddWord("клавиатура", "клавиатура", "клавіатура");
+        }
+
+        public void AddWord(string correctWord, params string[] errorVariants)
+        {
+            if (string.IsNullOrWhiteSpace(correctWord))
+                throw new ArgumentException("Правильное слово не может быть пустым");
+
+            foreach (string variant in errorVariants)
+            {
+                if (!string.IsNullOrWhiteSpace(variant) && !_dictionary.ContainsKey(variant))
+                {
+                    _dictionary[variant] = correctWord;
+                }
+            }
+        }
+
+        public void AddWord(string correctWord, string errorVariant)
+        {
+            if (string.IsNullOrWhiteSpace(correctWord) || string.IsNullOrWhiteSpace(errorVariant))
+                throw new ArgumentException("Слова не могут быть пустыми");
+
+            if (!_dictionary.ContainsKey(errorVariant))
+            {
+                _dictionary[errorVariant] = correctWord;
+            }
+        }
+
+        public string GetCorrectWord(string word)
+        {
+            if (string.IsNullOrEmpty(word))
+                return word;
+
+            if (_dictionary.TryGetValue(word, out string correct))
+                return correct;
+
+            string lowerWord = word.ToLowerInvariant();
+            foreach (var kvp in _dictionary)
+            {
+                if (kvp.Key.Equals(lowerWord, StringComparison.OrdinalIgnoreCase))
+                    return kvp.Value;
+            }
+
+            return word;
+        }
+
+        public bool IsCorrect(string word)
+        {
+            return !_dictionary.ContainsKey(word);
+        }
+
+        public string FixText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            string[] words = text.Split(new[] { ' ', '\t', '\n', '\r', '.', ',', '!', '?', ';', ':' },
+                                        StringSplitOptions.RemoveEmptyEntries);
+
+            StringBuilder result = new StringBuilder(text);
+            int offset = 0;
+
+            foreach (string word in words)
+            {
+                if (string.IsNullOrEmpty(word))
+                    continue;
+
+                string corrected = GetCorrectWord(word);
+
+                if (!word.Equals(corrected, StringComparison.Ordinal))
+                {
+                    int index = text.IndexOf(word, offset, StringComparison.Ordinal);
+                    if (index >= 0)
+                    {
+                        if (char.IsUpper(word[0]))
+                        {
+                            corrected = char.ToUpper(corrected[0]) + corrected.Substring(1);
+                        }
+
+                        result.Replace(word, corrected, index, word.Length);
+                        offset = index + corrected.Length;
+                    }
+                }
+            }
+
+            return result.ToString();
+        }
+
+        public Dictionary<string, string> GetDictionary() => new Dictionary<string, string>(_dictionary);
+
+        public int Count => _dictionary.Count;
+    }
+
+    /// <summary>
+    /// Класс для обработки текстовых файлов
+    /// </summary>
+    public class TextProcessor
+    {
+        private ErrorWordsDictionary _dictionary;
+        private string _directoryPath;
+        private int _totalFilesProcessed;
+        private int _totalErrorsFixed;
+
+        public TextProcessor()
+        {
+            _dictionary = new ErrorWordsDictionary();
+            _totalFilesProcessed = 0;
+            _totalErrorsFixed = 0;
+        }
+
+        public TextProcessor(ErrorWordsDictionary dictionary)
+        {
+            _dictionary = dictionary ?? new ErrorWordsDictionary();
+            _totalFilesProcessed = 0;
+            _totalErrorsFixed = 0;
+        }
+
+        public void ProcessDirectory(string directoryPath)
+        {
+            if (!Directory.Exists(directoryPath))
+                throw new DirectoryNotFoundException($"Директория не найдена: {directoryPath}");
+
+            _directoryPath = directoryPath;
+            _totalFilesProcessed = 0;
+            _totalErrorsFixed = 0;
+
+            string[] files = Directory.GetFiles(directoryPath, "*.txt", SearchOption.AllDirectories);
+
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"\n  Найдено файлов для обработки: {files.Length}");
+            Console.ResetColor();
+
+            foreach (string filePath in files)
+            {
+                try
+                {
+                    string fileName = Path.GetFileName(filePath);
+                    Console.Write($"\n  Обработка файла: {fileName}");
+
+                    string content = File.ReadAllText(filePath, Encoding.UTF8);
+                    string originalContent = content;
+
+                    // Исправление орфографических ошибок
+                    content = _dictionary.FixText(content);
+                    int errorsFixed = CountDifferences(originalContent, content);
+
+                    // Исправление номеров телефонов
+                    content = FixPhoneNumbers(content);
+
+                    if (content != originalContent)
+                    {
+                        File.WriteAllText(filePath, content, Encoding.UTF8);
+                        _totalErrorsFixed += errorsFixed;
+                        _totalFilesProcessed++;
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine($" ✅ (исправлено: {errorsFixed} ошибок)");
+                        Console.ResetColor();
+                    }
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine(" ⚠️ (изменений не требуется)");
+                        Console.ResetColor();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($" ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                }
+            }
+
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("  ╔══════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("  ║                       РЕЗУЛЬТАТЫ ОБРАБОТКИ                 ║");
+            Console.WriteLine("  ╚══════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine($"  Обработано файлов: {_totalFilesProcessed}");
+            Console.WriteLine($"  Исправлено ошибок: {_totalErrorsFixed}");
+            Console.WriteLine();
+        }
+
+        private int CountDifferences(string original, string modified)
+        {
+            string[] originalWords = Regex.Split(original, @"\W+");
+            string[] modifiedWords = Regex.Split(modified, @"\W+");
+
+            int count = 0;
+            int minLength = Math.Min(originalWords.Length, modifiedWords.Length);
+
+            for (int i = 0; i < minLength; i++)
+            {
+                if (!originalWords[i].Equals(modifiedWords[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private string FixPhoneNumbers(string text)
+        {
+            // Паттерн для формата (012) 345-67-89
+            string pattern = @"\((\d{3})\)\s*(\d{3})[-](\d{2})[-](\d{2})";
+            string replacement = "+380 $1 $2 $3 $4";
+            string result = Regex.Replace(text, pattern, replacement);
+
+            // Паттерн для формата 012-345-67-89
+            string pattern2 = @"(\d{3})[-](\d{3})[-](\d{2})[-](\d{2})";
+            string replacement2 = "+380 $1 $2 $3 $4";
+            result = Regex.Replace(result, pattern2, replacement2);
+
+            // Паттерн для формата +380 12 345 67 89 (приведение к единому виду)
+            string pattern3 = @"\+380\s*(\d{2})\s*(\d{3})\s*(\d{2})\s*(\d{2})";
+            string replacement3 = "+380 $1 $2 $3 $4";
+            result = Regex.Replace(result, pattern3, replacement3);
+
+            return result;
+        }
+
+        public void ShowDictionary()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                         СЛОВАРЬ ОШИБОЧНЫХ СЛОВ                       ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.WriteLine($"  Всего записей: {_dictionary.Count}");
+            Console.WriteLine();
+
+            var dict = _dictionary.GetDictionary();
+            int count = 0;
+            foreach (var kvp in dict.OrderBy(k => k.Key))
+            {
+                count++;
+                Console.WriteLine($"  {count,3}. {kvp.Key,-15} → {kvp.Value}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+            Console.ReadKey();
+        }
+
+        public void AddWordToDictionary(string correct, string error)
+        {
+            _dictionary.AddWord(correct, error);
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"\n  ✅ Добавлено: {error} → {correct}");
+            Console.ResetColor();
+        }
+
+        public string TestFixText(string text)
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                        ТЕСТИРОВАНИЕ ИСПРАВЛЕНИЯ                      ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("  Оригинальный текст:");
+            Console.ResetColor();
+            Console.WriteLine($"  {text}");
+            Console.WriteLine();
+
+            string fixedText = _dictionary.FixText(text);
+            fixedText = FixPhoneNumbers(fixedText);
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("  Исправленный текст:");
+            Console.ResetColor();
+            Console.WriteLine($"  {fixedText}");
+            Console.WriteLine();
+
+            int diff = CountDifferences(text, fixedText);
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"  Исправлено слов: {diff}");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+            Console.ReadKey();
+
+            return fixedText;
+        }
+
+        public int TotalFilesProcessed => _totalFilesProcessed;
+        public int TotalErrorsFixed => _totalErrorsFixed;
+    }
+
+    /// <summary>
+    /// Главный класс программы
+    /// </summary>
+    class Program
+    {
+        private static TextProcessor _processor = new TextProcessor();
+
+        static void Main(string[] args)
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.Title = "Задание 5 - Строки и коллекции";
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                    ЗАДАНИЕ 5 - СТРОКИ И КОЛЛЕКЦИИ                    ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                     СИСТЕМА ИСПРАВЛЕНИЯ ТЕКСТОВ                      ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine("  1. Обработка файлов в директории");
+                Console.WriteLine("  2. Показать словарь ошибочных слов");
+                Console.WriteLine("  3. Добавить слово в словарь");
+                Console.WriteLine("  4. Тестирование исправления текста");
+                Console.WriteLine("  5. Обработка отдельного файла");
+                Console.WriteLine("  6. Выйти");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                try
+                {
+                    switch (choice)
+                    {
+                        case "1":
+                            ProcessDirectoryMenu();
+                            break;
+                        case "2":
+                            _processor.ShowDictionary();
+                            break;
+                        case "3":
+                            AddWordMenu();
+                            break;
+                        case "4":
+                            TestFixMenu();
+                            break;
+                        case "5":
+                            ProcessSingleFileMenu();
+                            break;
+                        case "6":
+                            exit = true;
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  До свидания!");
+                            Console.ResetColor();
+                            break;
+                        default:
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("\n  ❌ Неверный выбор! Нажмите любую клавишу...");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+            }
+        }
+
+        static void ProcessDirectoryMenu()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                          ОБРАБОТКА ДИРЕКТОРИИ                        ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.Write("  Введите путь к директории: ");
+            string directoryPath = Console.ReadLine();
+
+            if (!Directory.Exists(directoryPath))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("\n  ❌ Директория не найдена!");
+                Console.ResetColor();
+                Console.ReadKey();
+                return;
+            }
+
+            _processor.ProcessDirectory(directoryPath);
+            Console.ReadKey();
+        }
+
+        static void AddWordMenu()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                        ДОБАВЛЕНИЕ СЛОВА                              ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.Write("  Введите правильное слово: ");
+            string correct = Console.ReadLine();
+            Console.Write("  Введите ошибочный вариант: ");
+            string error = Console.ReadLine();
+
+            if (!string.IsNullOrWhiteSpace(correct) && !string.IsNullOrWhiteSpace(error))
+            {
+                _processor.AddWordToDictionary(correct, error);
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("\n  ❌ Ошибка: слова не могут быть пустыми!");
+                Console.ResetColor();
+            }
+
+            Console.ReadKey();
+        }
+
+        static void TestFixMenu()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                        ТЕСТИРОВАНИЕ ИСПРАВЛЕНИЯ                      ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.WriteLine("  Введите текст для исправления (или Enter для использования примера):");
+            Console.WriteLine("  Пример: првиет, как дела? мой телефон (012) 345-67-89");
+            Console.WriteLine(new string('═', 70));
+
+            string input = Console.ReadLine();
+            if (string.IsNullOrEmpty(input))
+            {
+                input = "првиет, как дела? мой телефон (012) 345-67-89 и +380 12 345 67 89";
+            }
+
+            _processor.TestFixText(input);
+        }
+
+        static void ProcessSingleFileMenu()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                        ОБРАБОТКА ОТДЕЛЬНОГО ФАЙЛА                    ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.Write("  Введите путь к файлу: ");
+            string filePath = Console.ReadLine();
+
+            if (!File.Exists(filePath))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("\n  ❌ Файл не найден!");
+                Console.ResetColor();
+                Console.ReadKey();
+                return;
+            }
+
+            try
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"\n  Обработка файла: {Path.GetFileName(filePath)}");
+                Console.ResetColor();
+
+                string content = File.ReadAllText(filePath, Encoding.UTF8);
+
+                Console.WriteLine("\n  Оригинальный текст (первые 200 символов):");
+                Console.WriteLine(new string('═', 70));
+                Console.WriteLine(content.Length > 200 ? content.Substring(0, 200) + "..." : content);
+                Console.WriteLine(new string('═', 70));
+
+                // Создаем временную директорию для обработки
+                string tempDir = Path.Combine(Path.GetDirectoryName(filePath), "temp_processing");
+                Directory.CreateDirectory(tempDir);
+
+                string tempFile = Path.Combine(tempDir, Path.GetFileName(filePath));
+                File.Copy(filePath, tempFile, true);
+
+                // Обрабатываем через процессор
+                TextProcessor tempProcessor = new TextProcessor();
+                tempProcessor.ProcessDirectory(tempDir);
+
+                // Читаем обработанный файл
+                string processedContent = File.ReadAllText(tempFile, Encoding.UTF8);
+
+                Console.WriteLine("\n  Исправленный текст (первые 200 символов):");
+                Console.WriteLine(new string('═', 70));
+                Console.WriteLine(processedContent.Length > 200 ? processedContent.Substring(0, 200) + "..." : processedContent);
+                Console.WriteLine(new string('═', 70));
+
+                Console.Write("\n  Сохранить изменения в оригинальный файл? (y/n): ");
+                if (Console.ReadLine().ToLower() == "y")
+                {
+                    File.Copy(tempFile, filePath, true);
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine("\n  ✅ Изменения сохранены!");
+                    Console.ResetColor();
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine("\n  ⚠️ Изменения не сохранены.");
+                    Console.ResetColor();
+                }
+
+                // Удаляем временную директорию
+                try
+                {
+                    Directory.Delete(tempDir, true);
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                Console.ResetColor();
+            }
+
+            Console.ReadKey();
+        }
+    }
+}
