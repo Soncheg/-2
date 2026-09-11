@@ -1,3 +1,3111 @@
-<Solution>
-  <Project Path="задача 4.csproj" />
-</Solution>
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Xml.Serialization;
+using System.Text;
+using System.Linq;
+using System.Text.Json;
+using System.Threading;
+
+namespace Task4_IO
+{
+    /// <summary>
+    /// Класс текстового файла с поддержкой сериализации
+    /// </summary>
+    [Serializable]
+    public class TextFile
+    {
+        public string FileName { get; set; }
+        public string Content { get; set; }
+        public DateTime LastModified { get; set; }
+        public string FilePath { get; set; }
+
+        public TextFile()
+        {
+            FileName = "Новый файл";
+            Content = string.Empty;
+            LastModified = DateTime.Now;
+            FilePath = string.Empty;
+        }
+
+        public TextFile(string fileName, string content)
+        {
+            FileName = fileName;
+            Content = content;
+            LastModified = DateTime.Now;
+            FilePath = string.Empty;
+        }
+
+        /// <summary>
+        /// Сохранение файла в бинарном формате с использованием JSON
+        /// </summary>
+        public void SaveBinary(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                throw new ArgumentException("Путь не может быть пустым");
+
+            try
+            {
+                // Используем JSON сериализацию
+                string json = JsonSerializer.Serialize(this, new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                });
+
+                // Сохраняем как бинарный файл с UTF-8 кодировкой
+                byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
+                File.WriteAllBytes(path, jsonBytes);
+
+                FilePath = path;
+                LastModified = File.GetLastWriteTime(path);
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"Ошибка при сериализации: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Загрузка файла из бинарного формата
+        /// </summary>
+        public static TextFile LoadBinary(string path)
+        {
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Файл не найден: {path}");
+
+            try
+            {
+                // Читаем бинарный файл как JSON
+                byte[] jsonBytes = File.ReadAllBytes(path);
+                string json = Encoding.UTF8.GetString(jsonBytes);
+
+                TextFile file = JsonSerializer.Deserialize<TextFile>(json);
+                file.FilePath = path;
+                file.LastModified = File.GetLastWriteTime(path);
+                return file;
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"Ошибка при десериализации: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Сохранение файла в XML формате
+        /// </summary>
+        public void SaveXml(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                throw new ArgumentException("Путь не может быть пустым");
+
+            try
+            {
+                XmlSerializer serializer = new XmlSerializer(typeof(TextFile));
+                using (StreamWriter writer = new StreamWriter(path))
+                {
+                    serializer.Serialize(writer, this);
+                }
+                FilePath = path;
+                LastModified = File.GetLastWriteTime(path);
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"Ошибка при XML сериализации: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Загрузка файла из XML формата
+        /// </summary>
+        public static TextFile LoadXml(string path)
+        {
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Файл не найден: {path}");
+
+            try
+            {
+                XmlSerializer serializer = new XmlSerializer(typeof(TextFile));
+                using (StreamReader reader = new StreamReader(path))
+                {
+                    TextFile file = (TextFile)serializer.Deserialize(reader);
+                    file.FilePath = path;
+                    file.LastModified = File.GetLastWriteTime(path);
+                    return file;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"Ошибка при XML десериализации: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Сохранение в обычный текстовый файл
+        /// </summary>
+        public void SaveText(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                throw new ArgumentException("Путь не может быть пустым");
+
+            File.WriteAllText(path, Content, Encoding.UTF8);
+            FilePath = path;
+            LastModified = File.GetLastWriteTime(path);
+        }
+
+        /// <summary>
+        /// Загрузка из обычного текстового файла
+        /// </summary>
+        public static TextFile LoadText(string path)
+        {
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Файл не найден: {path}");
+
+            string content = File.ReadAllText(path, Encoding.UTF8);
+            string fileName = Path.GetFileName(path);
+
+            TextFile file = new TextFile(fileName, content);
+            file.FilePath = path;
+            file.LastModified = File.GetLastWriteTime(path);
+
+            return file;
+        }
+
+        public override string ToString()
+        {
+            return $"Файл: {FileName}, Размер: {Content.Length} символов, " +
+                   $"Изменён: {LastModified:dd.MM.yyyy HH:mm:ss}";
+        }
+    }
+
+    /// <summary>
+    /// Класс для поиска текстовых файлов по ключевым словам
+    /// </summary>
+    public class FileSearch
+    {
+        private List<string> _keywords;
+
+        public FileSearch()
+        {
+            _keywords = new List<string>();
+        }
+
+        public FileSearch(params string[] keywords)
+        {
+            _keywords = new List<string>(keywords);
+        }
+
+        public void AddKeyword(string keyword)
+        {
+            if (!string.IsNullOrWhiteSpace(keyword) && !_keywords.Contains(keyword))
+                _keywords.Add(keyword);
+        }
+
+        public void RemoveKeyword(string keyword)
+        {
+            _keywords.Remove(keyword);
+        }
+
+        public List<string> Keywords => new List<string>(_keywords);
+
+        /// <summary>
+        /// Поиск файлов по ключевым словам в указанной директории
+        /// </summary>
+        public List<SearchResult> SearchInDirectory(string directoryPath, bool recursive = true)
+        {
+            if (!Directory.Exists(directoryPath))
+                throw new DirectoryNotFoundException($"Директория не найдена: {directoryPath}");
+
+            if (_keywords.Count == 0)
+                throw new InvalidOperationException("Не заданы ключевые слова для поиска");
+
+            List<SearchResult> results = new List<SearchResult>();
+
+            // Получаем все текстовые файлы
+            string[] files = Directory.GetFiles(directoryPath, "*.txt",
+                recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+
+            foreach (string filePath in files)
+            {
+                try
+                {
+                    string content = File.ReadAllText(filePath, Encoding.UTF8);
+                    List<string> foundKeywords = new List<string>();
+
+                    foreach (string keyword in _keywords)
+                    {
+                        if (content.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            foundKeywords.Add(keyword);
+                        }
+                    }
+
+                    if (foundKeywords.Count > 0)
+                    {
+                        results.Add(new SearchResult
+                        {
+                            FilePath = filePath,
+                            FileName = Path.GetFileName(filePath),
+                            FoundKeywords = foundKeywords,
+                            Content = content,
+                            MatchCount = foundKeywords.Count
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Ошибка при чтении файла {filePath}: {ex.Message}");
+                }
+            }
+
+            return results.OrderByDescending(r => r.MatchCount).ToList();
+        }
+
+        /// <summary>
+        /// Класс результата поиска
+        /// </summary>
+        public class SearchResult
+        {
+            public string FilePath { get; set; }
+            public string FileName { get; set; }
+            public List<string> FoundKeywords { get; set; }
+            public string Content { get; set; }
+            public int MatchCount { get; set; }
+
+            public override string ToString()
+            {
+                return $"Файл: {FileName}, Найдено ключевых слов: {MatchCount}, " +
+                       $"Слова: {string.Join(", ", FoundKeywords)}";
+            }
+
+            public string GetPreview(int previewLength = 100)
+            {
+                if (string.IsNullOrEmpty(Content))
+                    return string.Empty;
+
+                int start = 0;
+                foreach (string keyword in FoundKeywords)
+                {
+                    int index = Content.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+                    if (index >= 0)
+                    {
+                        start = Math.Max(0, index - 20);
+                        break;
+                    }
+                }
+
+                int length = Math.Min(previewLength, Content.Length - start);
+                string preview = Content.Substring(start, length);
+
+                if (start > 0)
+                    preview = "..." + preview;
+                if (start + length < Content.Length)
+                    preview = preview + "...";
+
+                return preview;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Memento для сохранения состояния текстового редактора
+    /// </summary>
+    public class TextEditorMemento
+    {
+        public string Content { get; }
+        public int CursorPosition { get; }
+        public DateTime Timestamp { get; }
+        public string Description { get; }
+
+        public TextEditorMemento(string content, int cursorPosition, string description = "")
+        {
+            Content = content;
+            CursorPosition = cursorPosition;
+            Timestamp = DateTime.Now;
+            Description = description;
+        }
+    }
+
+    /// <summary>
+    /// Текстовый редактор с поддержкой отката изменений (Memento)
+    /// </summary>
+    public class TextEditor
+    {
+        private TextFile _currentFile;
+        private List<TextEditorMemento> _history;
+        private int _currentStateIndex;
+        private int _cursorPosition;
+
+        public TextEditor()
+        {
+            _currentFile = new TextFile();
+            _history = new List<TextEditorMemento>();
+            _currentStateIndex = -1;
+            _cursorPosition = 0;
+        }
+
+        public TextFile CurrentFile => _currentFile;
+
+        /// <summary>
+        /// Загрузка файла с проверкой типа и обработкой ошибок
+        /// </summary>
+        public void LoadFile(string path)
+        {
+            // Проверяем существование файла
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Файл не найден: {path}");
+
+            // Проверяем расширение файла
+            string extension = Path.GetExtension(path).ToLower();
+            string content;
+
+            // Проверяем, является ли файл текстовым
+            if (extension == ".txt")
+            {
+                // Для текстовых файлов используем чтение с повторными попытками
+                content = ReadFileWithRetry(path);
+            }
+            else
+            {
+                // Если файл не .txt, показываем понятное сообщение об ошибке
+                ShowFileTypeError(path, extension);
+                throw new NotSupportedException($"Формат {extension} не поддерживается. Используйте .txt файлы.");
+            }
+
+            // Создаем объект TextFile с загруженным содержимым
+            _currentFile = new TextFile(Path.GetFileName(path), content);
+            _currentFile.FilePath = path;
+            _history.Clear();
+            _currentStateIndex = -1;
+            _cursorPosition = 0;
+            SaveState("Загрузка файла");
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"\n✅ Файл '{Path.GetFileName(path)}' успешно загружен!");
+            Console.WriteLine($"   Размер файла: {content.Length} символов");
+            Console.ResetColor();
+            Thread.Sleep(1500);
+        }
+
+        /// <summary>
+        /// Показывает сообщение об ошибке при неподдерживаемом формате файла
+        /// </summary>
+        private void ShowFileTypeError(string path, string extension)
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                           ОШИБКА ЗАГРУЗКИ ФАЙЛА                          ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.WriteLine($"   Файл:      {Path.GetFileName(path)}");
+            Console.WriteLine($"   Расширение: {extension}");
+            Console.WriteLine($"   Размер:     {new FileInfo(path).Length} байт");
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("   ❌ ПРОГРАММА ПОДДЕРЖИВАЕТ ТОЛЬКО ТЕКСТОВЫЕ ФАЙЛЫ (.txt)");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.WriteLine("   📌 РЕШЕНИЕ:");
+            Console.WriteLine("   1. Откройте файл в Notepad++ / Блокноте и сохраните как .txt");
+            Console.WriteLine("   2. Или создайте новый файл с расширением .txt для работы");
+            Console.WriteLine("   3. Или используйте онлайн-конвертер для конвертации в .txt");
+            Console.WriteLine();
+            Console.WriteLine("   💡 Подсказка: Для тестирования создайте файл test.txt");
+            Console.WriteLine("   и запишите в него любой текст.");
+            Console.WriteLine();
+            Console.WriteLine("Нажмите любую клавишу для продолжения...");
+            Console.ReadKey();
+        }
+
+        /// <summary>
+        /// Чтение файла с обработкой блокировки (если файл открыт в другой программе)
+        /// </summary>
+        private string ReadFileWithRetry(string path, int maxAttempts = 5)
+        {
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                try
+                {
+                    // Используем FileShare.ReadWrite для чтения даже если файл открыт
+                    using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (StreamReader sr = new StreamReader(fs, Encoding.UTF8))
+                    {
+                        return sr.ReadToEnd();
+                    }
+                }
+                catch (IOException ex)
+                {
+                    if (attempt < maxAttempts - 1)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"⏳ Файл занят, повторная попытка через 1 секунду... (попытка {attempt + 1}/{maxAttempts})");
+                        Console.ResetColor();
+                        Thread.Sleep(1000);
+                    }
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"❌ Ошибка: Не удалось открыть файл после {maxAttempts} попыток.");
+                        Console.WriteLine($"   Убедитесь, что файл не открыт в другой программе.");
+                        Console.ResetColor();
+                        throw new IOException($"Не удалось открыть файл. Убедитесь, что файл не открыт в другой программе.", ex);
+                    }
+                }
+            }
+            return null; // никогда не достигнется
+        }
+
+        public void NewFile(string name = "Новый файл")
+        {
+            if (!name.EndsWith(".txt"))
+                name += ".txt";
+
+            _currentFile = new TextFile(name, string.Empty);
+            _history.Clear();
+            _currentStateIndex = -1;
+            _cursorPosition = 0;
+            SaveState("Создание нового файла");
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"\n✅ Создан новый файл: {name}");
+            Console.ResetColor();
+            Thread.Sleep(1000);
+        }
+
+        public void SetContent(string content)
+        {
+            _currentFile.Content = content;
+            SaveState("Изменение содержимого");
+        }
+
+        public void InsertText(string text, int position = -1)
+        {
+            if (position < 0)
+                position = _cursorPosition;
+
+            string content = _currentFile.Content;
+            if (position > content.Length)
+                position = content.Length;
+
+            _currentFile.Content = content.Insert(position, text);
+            _cursorPosition = position + text.Length;
+            SaveState($"Вставка текста: \"{text}\"");
+        }
+
+        public void DeleteText(int start, int length)
+        {
+            string content = _currentFile.Content;
+            if (start < 0 || start >= content.Length || length <= 0)
+                return;
+
+            length = Math.Min(length, content.Length - start);
+            string deletedText = content.Substring(start, length);
+            _currentFile.Content = content.Remove(start, length);
+            _cursorPosition = start;
+            SaveState($"Удаление текста: \"{deletedText}\"");
+        }
+
+        public void SaveState(string description = "")
+        {
+            // Удаляем состояния после текущего
+            if (_currentStateIndex < _history.Count - 1)
+            {
+                _history.RemoveRange(_currentStateIndex + 1, _history.Count - _currentStateIndex - 1);
+            }
+
+            TextEditorMemento memento = new TextEditorMemento(
+                _currentFile.Content,
+                _cursorPosition,
+                description
+            );
+
+            _history.Add(memento);
+            _currentStateIndex = _history.Count - 1;
+
+            // Ограничиваем историю (последние 100 состояний)
+            if (_history.Count > 100)
+            {
+                _history.RemoveAt(0);
+                _currentStateIndex--;
+            }
+        }
+
+        public bool Undo()
+        {
+            if (_currentStateIndex <= 0)
+                return false;
+
+            _currentStateIndex--;
+            TextEditorMemento memento = _history[_currentStateIndex];
+            _currentFile.Content = memento.Content;
+            _cursorPosition = memento.CursorPosition;
+            return true;
+        }
+
+        public bool Redo()
+        {
+            if (_currentStateIndex >= _history.Count - 1)
+                return false;
+
+            _currentStateIndex++;
+            TextEditorMemento memento = _history[_currentStateIndex];
+            _currentFile.Content = memento.Content;
+            _cursorPosition = memento.CursorPosition;
+            return true;
+        }
+
+        public void SaveFile(string path = null)
+        {
+            if (string.IsNullOrEmpty(path))
+                path = _currentFile.FilePath;
+
+            if (string.IsNullOrEmpty(path))
+                throw new InvalidOperationException("Не указан путь для сохранения");
+
+            // Проверяем расширение
+            if (!path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+                path += ".txt";
+
+            _currentFile.SaveText(path);
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"\n✅ Файл сохранен: {Path.GetFileName(path)}");
+            Console.ResetColor();
+            Thread.Sleep(1000);
+        }
+
+        public string GetHistoryInfo()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine($"История изменений (всего: {_history.Count}, текущий: {_currentStateIndex + 1}):");
+
+            for (int i = 0; i < _history.Count; i++)
+            {
+                string marker = i == _currentStateIndex ? "► " : "  ";
+                sb.AppendLine($"{marker}[{i + 1}] {_history[i].Timestamp:HH:mm:ss} - {_history[i].Description}");
+            }
+
+            return sb.ToString();
+        }
+
+        public string GetContentPreview(int length = 50)
+        {
+            string content = _currentFile.Content;
+            if (string.IsNullOrEmpty(content))
+                return "(пусто)";
+
+            if (content.Length <= length)
+                return content;
+
+            return content.Substring(0, length) + "...";
+        }
+    }
+
+    /// <summary>
+    /// Класс для индексации текстовых файлов
+    /// </summary>
+    public class FileIndexer
+    {
+        private Dictionary<string, List<IndexEntry>> _index;
+        private string _directoryPath;
+
+        public FileIndexer()
+        {
+            _index = new Dictionary<string, List<IndexEntry>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Индексация файлов в директории по ключевым словам
+        /// </summary>
+        public void IndexDirectory(string directoryPath, params string[] keywords)
+        {
+            if (!Directory.Exists(directoryPath))
+                throw new DirectoryNotFoundException($"Директория не найдена: {directoryPath}");
+
+            _directoryPath = directoryPath;
+            _index.Clear();
+
+            // Инициализация индекса для каждого ключевого слова
+            foreach (string keyword in keywords)
+            {
+                if (!string.IsNullOrWhiteSpace(keyword))
+                {
+                    _index[keyword] = new List<IndexEntry>();
+                }
+            }
+
+            // Получаем все текстовые файлы
+            string[] files = Directory.GetFiles(directoryPath, "*.txt", SearchOption.AllDirectories);
+
+            int processedFiles = 0;
+            foreach (string filePath in files)
+            {
+                try
+                {
+                    string content = File.ReadAllText(filePath, Encoding.UTF8);
+                    string fileName = Path.GetFileName(filePath);
+
+                    foreach (string keyword in _index.Keys.ToList())
+                    {
+                        int count = CountOccurrences(content, keyword);
+                        if (count > 0)
+                        {
+                            _index[keyword].Add(new IndexEntry
+                            {
+                                FilePath = filePath,
+                                FileName = fileName,
+                                Keyword = keyword,
+                                Occurrences = count,
+                                Preview = GetPreview(content, keyword)
+                            });
+                        }
+                    }
+                    processedFiles++;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Ошибка при индексации файла {filePath}: {ex.Message}");
+                }
+            }
+
+            Console.WriteLine($"Индексация завершена. Обработано файлов: {processedFiles}, " +
+                             $"найдено ключевых слов: {_index.Values.Sum(list => list.Count)}");
+        }
+
+        private int CountOccurrences(string text, string keyword)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(keyword))
+                return 0;
+
+            int count = 0;
+            int index = 0;
+            while ((index = text.IndexOf(keyword, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+            {
+                count++;
+                index += keyword.Length;
+            }
+            return count;
+        }
+
+        private string GetPreview(string text, string keyword, int contextLength = 30)
+        {
+            if (string.IsNullOrEmpty(text))
+                return string.Empty;
+
+            int index = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+                return string.Empty;
+
+            int start = Math.Max(0, index - contextLength);
+            int length = Math.Min(contextLength * 2 + keyword.Length, text.Length - start);
+
+            string preview = text.Substring(start, length);
+            if (start > 0)
+                preview = "..." + preview;
+            if (start + length < text.Length)
+                preview = preview + "...";
+
+            return preview;
+        }
+
+        /// <summary>
+        /// Поиск файлов по ключевому слову
+        /// </summary>
+        public List<IndexEntry> Search(string keyword)
+        {
+            if (!_index.ContainsKey(keyword))
+                return new List<IndexEntry>();
+
+            return _index[keyword]
+                .OrderByDescending(e => e.Occurrences)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Поиск по всем ключевым словам
+        /// </summary>
+        public Dictionary<string, List<IndexEntry>> SearchAll()
+        {
+            Dictionary<string, List<IndexEntry>> results = new Dictionary<string, List<IndexEntry>>();
+
+            foreach (string keyword in _index.Keys)
+            {
+                results[keyword] = Search(keyword);
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// Вывод отчета об индексации
+        /// </summary>
+        public void PrintReport()
+        {
+            Console.WriteLine($"\n=== Отчет об индексации (директория: {_directoryPath}) ===");
+            Console.WriteLine($"Всего ключевых слов: {_index.Count}");
+
+            int totalEntries = 0;
+            foreach (string keyword in _index.Keys)
+            {
+                int count = _index[keyword].Count;
+                totalEntries += count;
+                Console.WriteLine($"  {keyword}: {count} вхождений в файлах");
+            }
+
+            Console.WriteLine($"Всего записей в индексе: {totalEntries}");
+
+            // Вывод подробной информации для каждого ключевого слова
+            Console.WriteLine("\nДетальная информация:");
+            foreach (string keyword in _index.Keys)
+            {
+                Console.WriteLine($"\nКлючевое слово: '{keyword}'");
+                foreach (IndexEntry entry in _index[keyword])
+                {
+                    Console.WriteLine($"  - {entry.FileName} (найдено: {entry.Occurrences} раз)");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Класс записи индекса
+        /// </summary>
+        public class IndexEntry
+        {
+            public string FilePath { get; set; }
+            public string FileName { get; set; }
+            public string Keyword { get; set; }
+            public int Occurrences { get; set; }
+            public string Preview { get; set; }
+
+            public override string ToString()
+            {
+                return $"Файл: {FileName}, Слово: '{Keyword}', Найдено: {Occurrences} раз";
+            }
+        }
+    }
+
+    /// <summary>
+    /// Консольный редактор текстовых файлов
+    /// </summary>
+    class Program
+    {
+        static TextEditor _editor = new TextEditor();
+        static FileSearch _search = new FileSearch();
+        static FileIndexer _indexer = new FileIndexer();
+
+        static void Main(string[] args)
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.Title = "Система работы с текстовыми файлами";
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║           СИСТЕМА РАБОТЫ С ТЕКСТОВЫМИ ФАЙЛАМИ               ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            bool exit = false;
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                      ГЛАВНОЕ МЕНЮ                            ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine("  1. Текстовый редактор");
+                Console.WriteLine("  2. Поиск файлов по ключевым словам");
+                Console.WriteLine("  3. Индексация файлов");
+                Console.WriteLine("  4. Работа с сериализацией");
+                Console.WriteLine("  5. Выйти");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                switch (choice)
+                {
+                    case "1":
+                        TextEditorMenu();
+                        break;
+                    case "2":
+                        SearchMenu();
+                        break;
+                    case "3":
+                        IndexerMenu();
+                        break;
+                    case "4":
+                        SerializationMenu();
+                        break;
+                    case "5":
+                        exit = true;
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("\n  До свидания!");
+                        Console.ResetColor();
+                        break;
+                    default:
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("\n  Неверный выбор! Нажмите любую клавишу...");
+                        Console.ResetColor();
+                        Console.ReadKey();
+                        break;
+                }
+            }
+        }
+
+        static void TextEditorMenu()
+        {
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                      ТЕКСТОВЫЙ РЕДАКТОР                      ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine($"  Текущий файл: {_editor.CurrentFile.FileName}");
+                Console.WriteLine($"  Содержимое:  {_editor.GetContentPreview(60)}");
+                Console.WriteLine($"  Размер:      {_editor.CurrentFile.Content.Length} символов");
+                Console.WriteLine($"  Состояний:   {_editor.GetHistoryInfo().Split('\n').Length - 2}");
+                Console.WriteLine();
+                Console.WriteLine("  1. Загрузить файл");
+                Console.WriteLine("  2. Создать новый файл");
+                Console.WriteLine("  3. Просмотреть содержимое");
+                Console.WriteLine("  4. Редактировать содержимое");
+                Console.WriteLine("  5. Вставить текст");
+                Console.WriteLine("  6. Удалить текст");
+                Console.WriteLine("  7. Отменить (Ctrl+Z)");
+                Console.WriteLine("  8. Повторить (Ctrl+Y)");
+                Console.WriteLine("  9. Сохранить файл");
+                Console.WriteLine("  10. Сохранить как");
+                Console.WriteLine("  11. История изменений");
+                Console.WriteLine("  12. Назад в главное меню");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                try
+                {
+                    switch (choice)
+                    {
+                        case "1":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ЗАГРУЗКА ФАЙЛА                         ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь к файлу: ");
+                            string path = Console.ReadLine();
+
+                            if (string.IsNullOrWhiteSpace(path))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  Ошибка: путь не может быть пустым!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            _editor.LoadFile(path);
+                            break;
+
+                        case "2":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      СОЗДАНИЕ ФАЙЛА                         ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите имя файла (без расширения): ");
+                            string name = Console.ReadLine();
+
+                            if (string.IsNullOrWhiteSpace(name))
+                                name = "Новый файл";
+
+                            _editor.NewFile(name);
+                            break;
+
+                        case "3":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                  СОДЕРЖИМОЕ ФАЙЛА                           ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.WriteLine(new string('═', 70));
+                            Console.WriteLine(_editor.CurrentFile.Content);
+                            Console.WriteLine(new string('═', 70));
+                            Console.WriteLine();
+                            Console.WriteLine($"  Всего символов: {_editor.CurrentFile.Content.Length}");
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "4":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      РЕДАКТИРОВАНИЕ                          ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.WriteLine("  Введите новое содержимое (для завершения введите пустую строку):");
+                            Console.WriteLine(new string('═', 70));
+
+                            List<string> lines = new List<string>();
+                            string line;
+                            while ((line = Console.ReadLine()) != null && line != "")
+                            {
+                                lines.Add(line);
+                            }
+
+                            if (lines.Count > 0)
+                            {
+                                _editor.SetContent(string.Join(Environment.NewLine, lines));
+                                Console.ForegroundColor = ConsoleColor.Green;
+                                Console.WriteLine("\n  ✅ Содержимое обновлено!");
+                                Console.ResetColor();
+                            }
+                            else
+                            {
+                                Console.ForegroundColor = ConsoleColor.Yellow;
+                                Console.WriteLine("\n  ⚠️ Изменений не внесено.");
+                                Console.ResetColor();
+                            }
+
+                            Console.ReadKey();
+                            break;
+
+                        case "5":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ВСТАВКА ТЕКСТА                          ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите текст для вставки: ");
+                            string insertText = Console.ReadLine();
+                            Console.Write("  Введите позицию (или Enter для вставки в конец): ");
+                            string posInput = Console.ReadLine();
+                            int position = string.IsNullOrEmpty(posInput) ? -1 : int.Parse(posInput);
+                            _editor.InsertText(insertText, position);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Текст вставлен!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "6":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      УДАЛЕНИЕ ТЕКСТА                         ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите начальную позицию: ");
+                            int start = int.Parse(Console.ReadLine());
+                            Console.Write("  Введите длину удаляемого текста: ");
+                            int length = int.Parse(Console.ReadLine());
+                            _editor.DeleteText(start, length);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Текст удален!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "7":
+                            if (_editor.Undo())
+                            {
+                                Console.ForegroundColor = ConsoleColor.Green;
+                                Console.WriteLine("\n  ✅ Отменено последнее действие!");
+                                Console.ResetColor();
+                            }
+                            else
+                            {
+                                Console.ForegroundColor = ConsoleColor.Yellow;
+                                Console.WriteLine("\n  ⚠️ Нет действий для отмены.");
+                                Console.ResetColor();
+                            }
+                            Console.ReadKey();
+                            break;
+
+                        case "8":
+                            if (_editor.Redo())
+                            {
+                                Console.ForegroundColor = ConsoleColor.Green;
+                                Console.WriteLine("\n  ✅ Повторено отмененное действие!");
+                                Console.ResetColor();
+                            }
+                            else
+                            {
+                                Console.ForegroundColor = ConsoleColor.Yellow;
+                                Console.WriteLine("\n  ⚠️ Нет действий для повтора.");
+                                Console.ResetColor();
+                            }
+                            Console.ReadKey();
+                            break;
+
+                        case "9":
+                            _editor.SaveFile();
+                            break;
+
+                        case "10":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      СОХРАНЕНИЕ КАК                          ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь для сохранения: ");
+                            string savePath = Console.ReadLine();
+                            _editor.SaveFile(savePath);
+                            break;
+
+                        case "11":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                    ИСТОРИЯ ИЗМЕНЕНИЙ                        ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.WriteLine(_editor.GetHistoryInfo());
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "12":
+                            exit = true;
+                            break;
+
+                        default:
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("\n  Неверный выбор!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+                    }
+                }
+                catch (FileNotFoundException ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+                catch (NotSupportedException ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+            }
+        }
+
+        static void SearchMenu()
+        {
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                  ПОИСК ФАЙЛОВ ПО КЛЮЧЕВЫМ СЛОВАМ             ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine($"  Ключевые слова: {(_search.Keywords.Count > 0 ? string.Join(", ", _search.Keywords) : "(не заданы)")}");
+                Console.WriteLine();
+                Console.WriteLine("  1. Добавить ключевое слово");
+                Console.WriteLine("  2. Удалить ключевое слово");
+                Console.WriteLine("  3. Показать все ключевые слова");
+                Console.WriteLine("  4. Выполнить поиск в директории");
+                Console.WriteLine("  5. Назад в главное меню");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                try
+                {
+                    switch (choice)
+                    {
+                        case "1":
+                            Console.Write("  Введите ключевое слово: ");
+                            string keyword = Console.ReadLine();
+                            _search.AddKeyword(keyword);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine($"\n  ✅ Ключевое слово '{keyword}' добавлено!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "2":
+                            Console.Write("  Введите ключевое слово для удаления: ");
+                            string removeKeyword = Console.ReadLine();
+                            _search.RemoveKeyword(removeKeyword);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine($"\n  ✅ Ключевое слово '{removeKeyword}' удалено!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "3":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ВСЕ КЛЮЧЕВЫЕ СЛОВА                      ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+
+                            if (_search.Keywords.Count == 0)
+                            {
+                                Console.WriteLine("  Ключевые слова не заданы.");
+                            }
+                            else
+                            {
+                                foreach (string kw in _search.Keywords)
+                                {
+                                    Console.WriteLine($"  • {kw}");
+                                }
+                            }
+
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "4":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ПОИСК В ДИРЕКТОРИИ                     ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь к директории: ");
+                            string dirPath = Console.ReadLine();
+
+                            if (!Directory.Exists(dirPath))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  ❌ Директория не найдена!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            Console.Write("  Включить поддиректории? (y/n): ");
+                            bool recursive = Console.ReadLine().ToLower() == "y";
+
+                            Console.WriteLine("\n  Поиск выполняется...");
+                            List<FileSearch.SearchResult> results = _search.SearchInDirectory(dirPath, recursive);
+
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine($"║               РЕЗУЛЬТАТЫ ПОИСКА (найдено: {results.Count})              ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+
+                            if (results.Count == 0)
+                            {
+                                Console.WriteLine("  Файлы не найдены.");
+                            }
+                            else
+                            {
+                                foreach (var result in results)
+                                {
+                                    Console.WriteLine($"  📄 {result}");
+                                    Console.WriteLine($"     Превью: {result.GetPreview(150)}");
+                                    Console.WriteLine(new string('─', 70));
+                                }
+                            }
+
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "5":
+                            exit = true;
+                            break;
+
+                        default:
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("\n  Неверный выбор!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+            }
+        }
+
+        static void IndexerMenu()
+        {
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                      ИНДЕКСАЦИЯ ФАЙЛОВ                       ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine("  1. Выполнить индексацию директории");
+                Console.WriteLine("  2. Показать отчет об индексации");
+                Console.WriteLine("  3. Поиск по индексу");
+                Console.WriteLine("  4. Назад в главное меню");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                try
+                {
+                    switch (choice)
+                    {
+                        case "1":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ИНДЕКСАЦИЯ ДИРЕКТОРИИ                   ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь к директории: ");
+                            string dirPath = Console.ReadLine();
+
+                            if (!Directory.Exists(dirPath))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  ❌ Директория не найдена!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            Console.Write("  Введите ключевые слова через запятую: ");
+                            string keywordsInput = Console.ReadLine();
+                            string[] keywords = keywordsInput.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                                                             .Select(k => k.Trim())
+                                                             .Where(k => !string.IsNullOrWhiteSpace(k))
+                                                             .ToArray();
+
+                            if (keywords.Length == 0)
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  ❌ Не введено ни одного ключевого слова!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            Console.WriteLine("\n  Индексация выполняется...");
+                            _indexer.IndexDirectory(dirPath, keywords);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Индексация завершена!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "2":
+                            Console.Clear();
+                            _indexer.PrintReport();
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "3":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ПОИСК ПО ИНДЕКСУ                        ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите ключевое слово для поиска: ");
+                            string searchKeyword = Console.ReadLine();
+
+                            var results = _indexer.Search(searchKeyword);
+                            Console.WriteLine($"\n  Результаты поиска для '{searchKeyword}':");
+                            Console.WriteLine(new string('═', 70));
+
+                            if (results.Count == 0)
+                            {
+                                Console.ForegroundColor = ConsoleColor.Yellow;
+                                Console.WriteLine("  Совпадений не найдено.");
+                                Console.ResetColor();
+                            }
+                            else
+                            {
+                                foreach (var entry in results)
+                                {
+                                    Console.WriteLine($"  📄 {entry}");
+                                    Console.WriteLine($"     Превью: {entry.Preview}");
+                                    Console.WriteLine(new string('─', 70));
+                                }
+                            }
+
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "4":
+                            exit = true;
+                            break;
+
+                        default:
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("\n  Неверный выбор!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+            }
+        }
+
+        static void SerializationMenu()
+        {
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                    СЕРИАЛИЗАЦИЯ ФАЙЛОВ                       ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine("  1. Сохранить текущий файл в бинарном формате");
+                Console.WriteLine("  2. Загрузить файл из бинарного формата");
+                Console.WriteLine("  3. Сохранить текущий файл в XML формате");
+                Console.WriteLine("  4. Загрузить файл из XML формата");
+                Console.WriteLine("  5. Назад в главное меню");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                try
+                {
+                    switch (choice)
+                    {
+                        case "1":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                 СОХРАНЕНИЕ В БИНАРНОМ ФОРМАТЕ                 ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь для сохранения (с расширением .bin): ");
+                            string binPath = Console.ReadLine();
+                            _editor.CurrentFile.SaveBinary(binPath);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Файл сохранен в бинарном формате!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "2":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                 ЗАГРУЗКА ИЗ БИНАРНОГО ФОРМАТА                 ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь к бинарному файлу: ");
+                            string loadBinPath = Console.ReadLine();
+
+                            if (!File.Exists(loadBinPath))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  ❌ Файл не найден!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            TextFile loadedBinary = TextFile.LoadBinary(loadBinPath);
+                            _editor.NewFile(loadedBinary.FileName);
+                            _editor.SetContent(loadedBinary.Content);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Файл загружен из бинарного формата!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "3":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                   СОХРАНЕНИЕ В XML ФОРМАТЕ                    ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь для сохранения (с расширением .xml): ");
+                            string xmlPath = Console.ReadLine();
+                            _editor.CurrentFile.SaveXml(xmlPath);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Файл сохранен в XML формате!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "4":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                    ЗАГРУЗКА ИЗ XML ФОРМАТА                    ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь к XML файлу: ");
+                            string loadXmlPath = Console.ReadLine();
+
+                            if (!File.Exists(loadXmlPath))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  ❌ Файл не найден!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            TextFile loadedXml = TextFile.LoadXml(loadXmlPath);
+                            _editor.NewFile(loadedXml.FileName);
+                            _editor.SetContent(loadedXml.Content);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Файл загружен из XML формата!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "5":
+                            exit = true;
+                            break;
+
+                        default:
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("\n  Неверный выбор!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+            }
+        }
+    }
+}using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Xml.Serialization;
+using System.Text;
+using System.Linq;
+using System.Text.Json;
+using System.Threading;
+
+namespace Task4_IO
+{
+    /// <summary>
+    /// Класс текстового файла с поддержкой сериализации
+    /// </summary>
+    [Serializable]
+    public class TextFile
+    {
+        public string FileName { get; set; }
+        public string Content { get; set; }
+        public DateTime LastModified { get; set; }
+        public string FilePath { get; set; }
+
+        public TextFile()
+        {
+            FileName = "Новый файл";
+            Content = string.Empty;
+            LastModified = DateTime.Now;
+            FilePath = string.Empty;
+        }
+
+        public TextFile(string fileName, string content)
+        {
+            FileName = fileName;
+            Content = content;
+            LastModified = DateTime.Now;
+            FilePath = string.Empty;
+        }
+
+        /// <summary>
+        /// Сохранение файла в бинарном формате с использованием JSON
+        /// </summary>
+        public void SaveBinary(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                throw new ArgumentException("Путь не может быть пустым");
+
+            try
+            {
+                // Используем JSON сериализацию
+                string json = JsonSerializer.Serialize(this, new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                });
+
+                // Сохраняем как бинарный файл с UTF-8 кодировкой
+                byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
+                File.WriteAllBytes(path, jsonBytes);
+
+                FilePath = path;
+                LastModified = File.GetLastWriteTime(path);
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"Ошибка при сериализации: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Загрузка файла из бинарного формата
+        /// </summary>
+        public static TextFile LoadBinary(string path)
+        {
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Файл не найден: {path}");
+
+            try
+            {
+                // Читаем бинарный файл как JSON
+                byte[] jsonBytes = File.ReadAllBytes(path);
+                string json = Encoding.UTF8.GetString(jsonBytes);
+
+                TextFile file = JsonSerializer.Deserialize<TextFile>(json);
+                file.FilePath = path;
+                file.LastModified = File.GetLastWriteTime(path);
+                return file;
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"Ошибка при десериализации: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Сохранение файла в XML формате
+        /// </summary>
+        public void SaveXml(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                throw new ArgumentException("Путь не может быть пустым");
+
+            try
+            {
+                XmlSerializer serializer = new XmlSerializer(typeof(TextFile));
+                using (StreamWriter writer = new StreamWriter(path))
+                {
+                    serializer.Serialize(writer, this);
+                }
+                FilePath = path;
+                LastModified = File.GetLastWriteTime(path);
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"Ошибка при XML сериализации: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Загрузка файла из XML формата
+        /// </summary>
+        public static TextFile LoadXml(string path)
+        {
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Файл не найден: {path}");
+
+            try
+            {
+                XmlSerializer serializer = new XmlSerializer(typeof(TextFile));
+                using (StreamReader reader = new StreamReader(path))
+                {
+                    TextFile file = (TextFile)serializer.Deserialize(reader);
+                    file.FilePath = path;
+                    file.LastModified = File.GetLastWriteTime(path);
+                    return file;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"Ошибка при XML десериализации: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Сохранение в обычный текстовый файл
+        /// </summary>
+        public void SaveText(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                throw new ArgumentException("Путь не может быть пустым");
+
+            File.WriteAllText(path, Content, Encoding.UTF8);
+            FilePath = path;
+            LastModified = File.GetLastWriteTime(path);
+        }
+
+        /// <summary>
+        /// Загрузка из обычного текстового файла
+        /// </summary>
+        public static TextFile LoadText(string path)
+        {
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Файл не найден: {path}");
+
+            string content = File.ReadAllText(path, Encoding.UTF8);
+            string fileName = Path.GetFileName(path);
+
+            TextFile file = new TextFile(fileName, content);
+            file.FilePath = path;
+            file.LastModified = File.GetLastWriteTime(path);
+
+            return file;
+        }
+
+        public override string ToString()
+        {
+            return $"Файл: {FileName}, Размер: {Content.Length} символов, " +
+                   $"Изменён: {LastModified:dd.MM.yyyy HH:mm:ss}";
+        }
+    }
+
+    /// <summary>
+    /// Класс для поиска текстовых файлов по ключевым словам
+    /// </summary>
+    public class FileSearch
+    {
+        private List<string> _keywords;
+
+        public FileSearch()
+        {
+            _keywords = new List<string>();
+        }
+
+        public FileSearch(params string[] keywords)
+        {
+            _keywords = new List<string>(keywords);
+        }
+
+        public void AddKeyword(string keyword)
+        {
+            if (!string.IsNullOrWhiteSpace(keyword) && !_keywords.Contains(keyword))
+                _keywords.Add(keyword);
+        }
+
+        public void RemoveKeyword(string keyword)
+        {
+            _keywords.Remove(keyword);
+        }
+
+        public List<string> Keywords => new List<string>(_keywords);
+
+        /// <summary>
+        /// Поиск файлов по ключевым словам в указанной директории
+        /// </summary>
+        public List<SearchResult> SearchInDirectory(string directoryPath, bool recursive = true)
+        {
+            if (!Directory.Exists(directoryPath))
+                throw new DirectoryNotFoundException($"Директория не найдена: {directoryPath}");
+
+            if (_keywords.Count == 0)
+                throw new InvalidOperationException("Не заданы ключевые слова для поиска");
+
+            List<SearchResult> results = new List<SearchResult>();
+
+            // Получаем все текстовые файлы
+            string[] files = Directory.GetFiles(directoryPath, "*.txt",
+                recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+
+            foreach (string filePath in files)
+            {
+                try
+                {
+                    string content = File.ReadAllText(filePath, Encoding.UTF8);
+                    List<string> foundKeywords = new List<string>();
+
+                    foreach (string keyword in _keywords)
+                    {
+                        if (content.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            foundKeywords.Add(keyword);
+                        }
+                    }
+
+                    if (foundKeywords.Count > 0)
+                    {
+                        results.Add(new SearchResult
+                        {
+                            FilePath = filePath,
+                            FileName = Path.GetFileName(filePath),
+                            FoundKeywords = foundKeywords,
+                            Content = content,
+                            MatchCount = foundKeywords.Count
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Ошибка при чтении файла {filePath}: {ex.Message}");
+                }
+            }
+
+            return results.OrderByDescending(r => r.MatchCount).ToList();
+        }
+
+        /// <summary>
+        /// Класс результата поиска
+        /// </summary>
+        public class SearchResult
+        {
+            public string FilePath { get; set; }
+            public string FileName { get; set; }
+            public List<string> FoundKeywords { get; set; }
+            public string Content { get; set; }
+            public int MatchCount { get; set; }
+
+            public override string ToString()
+            {
+                return $"Файл: {FileName}, Найдено ключевых слов: {MatchCount}, " +
+                       $"Слова: {string.Join(", ", FoundKeywords)}";
+            }
+
+            public string GetPreview(int previewLength = 100)
+            {
+                if (string.IsNullOrEmpty(Content))
+                    return string.Empty;
+
+                int start = 0;
+                foreach (string keyword in FoundKeywords)
+                {
+                    int index = Content.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+                    if (index >= 0)
+                    {
+                        start = Math.Max(0, index - 20);
+                        break;
+                    }
+                }
+
+                int length = Math.Min(previewLength, Content.Length - start);
+                string preview = Content.Substring(start, length);
+
+                if (start > 0)
+                    preview = "..." + preview;
+                if (start + length < Content.Length)
+                    preview = preview + "...";
+
+                return preview;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Memento для сохранения состояния текстового редактора
+    /// </summary>
+    public class TextEditorMemento
+    {
+        public string Content { get; }
+        public int CursorPosition { get; }
+        public DateTime Timestamp { get; }
+        public string Description { get; }
+
+        public TextEditorMemento(string content, int cursorPosition, string description = "")
+        {
+            Content = content;
+            CursorPosition = cursorPosition;
+            Timestamp = DateTime.Now;
+            Description = description;
+        }
+    }
+
+    /// <summary>
+    /// Текстовый редактор с поддержкой отката изменений (Memento)
+    /// </summary>
+    public class TextEditor
+    {
+        private TextFile _currentFile;
+        private List<TextEditorMemento> _history;
+        private int _currentStateIndex;
+        private int _cursorPosition;
+
+        public TextEditor()
+        {
+            _currentFile = new TextFile();
+            _history = new List<TextEditorMemento>();
+            _currentStateIndex = -1;
+            _cursorPosition = 0;
+        }
+
+        public TextFile CurrentFile => _currentFile;
+
+        /// <summary>
+        /// Загрузка файла с проверкой типа и обработкой ошибок
+        /// </summary>
+        public void LoadFile(string path)
+        {
+            // Проверяем существование файла
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Файл не найден: {path}");
+
+            // Проверяем расширение файла
+            string extension = Path.GetExtension(path).ToLower();
+            string content;
+
+            // Проверяем, является ли файл текстовым
+            if (extension == ".txt")
+            {
+                // Для текстовых файлов используем чтение с повторными попытками
+                content = ReadFileWithRetry(path);
+            }
+            else
+            {
+                // Если файл не .txt, показываем понятное сообщение об ошибке
+                ShowFileTypeError(path, extension);
+                throw new NotSupportedException($"Формат {extension} не поддерживается. Используйте .txt файлы.");
+            }
+
+            // Создаем объект TextFile с загруженным содержимым
+            _currentFile = new TextFile(Path.GetFileName(path), content);
+            _currentFile.FilePath = path;
+            _history.Clear();
+            _currentStateIndex = -1;
+            _cursorPosition = 0;
+            SaveState("Загрузка файла");
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"\n✅ Файл '{Path.GetFileName(path)}' успешно загружен!");
+            Console.WriteLine($"   Размер файла: {content.Length} символов");
+            Console.ResetColor();
+            Thread.Sleep(1500);
+        }
+
+        /// <summary>
+        /// Показывает сообщение об ошибке при неподдерживаемом формате файла
+        /// </summary>
+        private void ShowFileTypeError(string path, string extension)
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                           ОШИБКА ЗАГРУЗКИ ФАЙЛА                          ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.WriteLine($"   Файл:      {Path.GetFileName(path)}");
+            Console.WriteLine($"   Расширение: {extension}");
+            Console.WriteLine($"   Размер:     {new FileInfo(path).Length} байт");
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("   ❌ ПРОГРАММА ПОДДЕРЖИВАЕТ ТОЛЬКО ТЕКСТОВЫЕ ФАЙЛЫ (.txt)");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.WriteLine("   📌 РЕШЕНИЕ:");
+            Console.WriteLine("   1. Откройте файл в Notepad++ / Блокноте и сохраните как .txt");
+            Console.WriteLine("   2. Или создайте новый файл с расширением .txt для работы");
+            Console.WriteLine("   3. Или используйте онлайн-конвертер для конвертации в .txt");
+            Console.WriteLine();
+            Console.WriteLine("   💡 Подсказка: Для тестирования создайте файл test.txt");
+            Console.WriteLine("   и запишите в него любой текст.");
+            Console.WriteLine();
+            Console.WriteLine("Нажмите любую клавишу для продолжения...");
+            Console.ReadKey();
+        }
+
+        /// <summary>
+        /// Чтение файла с обработкой блокировки (если файл открыт в другой программе)
+        /// </summary>
+        private string ReadFileWithRetry(string path, int maxAttempts = 5)
+        {
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                try
+                {
+                    // Используем FileShare.ReadWrite для чтения даже если файл открыт
+                    using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (StreamReader sr = new StreamReader(fs, Encoding.UTF8))
+                    {
+                        return sr.ReadToEnd();
+                    }
+                }
+                catch (IOException ex)
+                {
+                    if (attempt < maxAttempts - 1)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"⏳ Файл занят, повторная попытка через 1 секунду... (попытка {attempt + 1}/{maxAttempts})");
+                        Console.ResetColor();
+                        Thread.Sleep(1000);
+                    }
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"❌ Ошибка: Не удалось открыть файл после {maxAttempts} попыток.");
+                        Console.WriteLine($"   Убедитесь, что файл не открыт в другой программе.");
+                        Console.ResetColor();
+                        throw new IOException($"Не удалось открыть файл. Убедитесь, что файл не открыт в другой программе.", ex);
+                    }
+                }
+            }
+            return null; // никогда не достигнется
+        }
+
+        public void NewFile(string name = "Новый файл")
+        {
+            if (!name.EndsWith(".txt"))
+                name += ".txt";
+
+            _currentFile = new TextFile(name, string.Empty);
+            _history.Clear();
+            _currentStateIndex = -1;
+            _cursorPosition = 0;
+            SaveState("Создание нового файла");
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"\n✅ Создан новый файл: {name}");
+            Console.ResetColor();
+            Thread.Sleep(1000);
+        }
+
+        public void SetContent(string content)
+        {
+            _currentFile.Content = content;
+            SaveState("Изменение содержимого");
+        }
+
+        public void InsertText(string text, int position = -1)
+        {
+            if (position < 0)
+                position = _cursorPosition;
+
+            string content = _currentFile.Content;
+            if (position > content.Length)
+                position = content.Length;
+
+            _currentFile.Content = content.Insert(position, text);
+            _cursorPosition = position + text.Length;
+            SaveState($"Вставка текста: \"{text}\"");
+        }
+
+        public void DeleteText(int start, int length)
+        {
+            string content = _currentFile.Content;
+            if (start < 0 || start >= content.Length || length <= 0)
+                return;
+
+            length = Math.Min(length, content.Length - start);
+            string deletedText = content.Substring(start, length);
+            _currentFile.Content = content.Remove(start, length);
+            _cursorPosition = start;
+            SaveState($"Удаление текста: \"{deletedText}\"");
+        }
+
+        public void SaveState(string description = "")
+        {
+            // Удаляем состояния после текущего
+            if (_currentStateIndex < _history.Count - 1)
+            {
+                _history.RemoveRange(_currentStateIndex + 1, _history.Count - _currentStateIndex - 1);
+            }
+
+            TextEditorMemento memento = new TextEditorMemento(
+                _currentFile.Content,
+                _cursorPosition,
+                description
+            );
+
+            _history.Add(memento);
+            _currentStateIndex = _history.Count - 1;
+
+            // Ограничиваем историю (последние 100 состояний)
+            if (_history.Count > 100)
+            {
+                _history.RemoveAt(0);
+                _currentStateIndex--;
+            }
+        }
+
+        public bool Undo()
+        {
+            if (_currentStateIndex <= 0)
+                return false;
+
+            _currentStateIndex--;
+            TextEditorMemento memento = _history[_currentStateIndex];
+            _currentFile.Content = memento.Content;
+            _cursorPosition = memento.CursorPosition;
+            return true;
+        }
+
+        public bool Redo()
+        {
+            if (_currentStateIndex >= _history.Count - 1)
+                return false;
+
+            _currentStateIndex++;
+            TextEditorMemento memento = _history[_currentStateIndex];
+            _currentFile.Content = memento.Content;
+            _cursorPosition = memento.CursorPosition;
+            return true;
+        }
+
+        public void SaveFile(string path = null)
+        {
+            if (string.IsNullOrEmpty(path))
+                path = _currentFile.FilePath;
+
+            if (string.IsNullOrEmpty(path))
+                throw new InvalidOperationException("Не указан путь для сохранения");
+
+            // Проверяем расширение
+            if (!path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+                path += ".txt";
+
+            _currentFile.SaveText(path);
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"\n✅ Файл сохранен: {Path.GetFileName(path)}");
+            Console.ResetColor();
+            Thread.Sleep(1000);
+        }
+
+        public string GetHistoryInfo()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine($"История изменений (всего: {_history.Count}, текущий: {_currentStateIndex + 1}):");
+
+            for (int i = 0; i < _history.Count; i++)
+            {
+                string marker = i == _currentStateIndex ? "► " : "  ";
+                sb.AppendLine($"{marker}[{i + 1}] {_history[i].Timestamp:HH:mm:ss} - {_history[i].Description}");
+            }
+
+            return sb.ToString();
+        }
+
+        public string GetContentPreview(int length = 50)
+        {
+            string content = _currentFile.Content;
+            if (string.IsNullOrEmpty(content))
+                return "(пусто)";
+
+            if (content.Length <= length)
+                return content;
+
+            return content.Substring(0, length) + "...";
+        }
+    }
+
+    /// <summary>
+    /// Класс для индексации текстовых файлов
+    /// </summary>
+    public class FileIndexer
+    {
+        private Dictionary<string, List<IndexEntry>> _index;
+        private string _directoryPath;
+
+        public FileIndexer()
+        {
+            _index = new Dictionary<string, List<IndexEntry>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Индексация файлов в директории по ключевым словам
+        /// </summary>
+        public void IndexDirectory(string directoryPath, params string[] keywords)
+        {
+            if (!Directory.Exists(directoryPath))
+                throw new DirectoryNotFoundException($"Директория не найдена: {directoryPath}");
+
+            _directoryPath = directoryPath;
+            _index.Clear();
+
+            // Инициализация индекса для каждого ключевого слова
+            foreach (string keyword in keywords)
+            {
+                if (!string.IsNullOrWhiteSpace(keyword))
+                {
+                    _index[keyword] = new List<IndexEntry>();
+                }
+            }
+
+            // Получаем все текстовые файлы
+            string[] files = Directory.GetFiles(directoryPath, "*.txt", SearchOption.AllDirectories);
+
+            int processedFiles = 0;
+            foreach (string filePath in files)
+            {
+                try
+                {
+                    string content = File.ReadAllText(filePath, Encoding.UTF8);
+                    string fileName = Path.GetFileName(filePath);
+
+                    foreach (string keyword in _index.Keys.ToList())
+                    {
+                        int count = CountOccurrences(content, keyword);
+                        if (count > 0)
+                        {
+                            _index[keyword].Add(new IndexEntry
+                            {
+                                FilePath = filePath,
+                                FileName = fileName,
+                                Keyword = keyword,
+                                Occurrences = count,
+                                Preview = GetPreview(content, keyword)
+                            });
+                        }
+                    }
+                    processedFiles++;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Ошибка при индексации файла {filePath}: {ex.Message}");
+                }
+            }
+
+            Console.WriteLine($"Индексация завершена. Обработано файлов: {processedFiles}, " +
+                             $"найдено ключевых слов: {_index.Values.Sum(list => list.Count)}");
+        }
+
+        private int CountOccurrences(string text, string keyword)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(keyword))
+                return 0;
+
+            int count = 0;
+            int index = 0;
+            while ((index = text.IndexOf(keyword, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+            {
+                count++;
+                index += keyword.Length;
+            }
+            return count;
+        }
+
+        private string GetPreview(string text, string keyword, int contextLength = 30)
+        {
+            if (string.IsNullOrEmpty(text))
+                return string.Empty;
+
+            int index = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+                return string.Empty;
+
+            int start = Math.Max(0, index - contextLength);
+            int length = Math.Min(contextLength * 2 + keyword.Length, text.Length - start);
+
+            string preview = text.Substring(start, length);
+            if (start > 0)
+                preview = "..." + preview;
+            if (start + length < text.Length)
+                preview = preview + "...";
+
+            return preview;
+        }
+
+        /// <summary>
+        /// Поиск файлов по ключевому слову
+        /// </summary>
+        public List<IndexEntry> Search(string keyword)
+        {
+            if (!_index.ContainsKey(keyword))
+                return new List<IndexEntry>();
+
+            return _index[keyword]
+                .OrderByDescending(e => e.Occurrences)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Поиск по всем ключевым словам
+        /// </summary>
+        public Dictionary<string, List<IndexEntry>> SearchAll()
+        {
+            Dictionary<string, List<IndexEntry>> results = new Dictionary<string, List<IndexEntry>>();
+
+            foreach (string keyword in _index.Keys)
+            {
+                results[keyword] = Search(keyword);
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// Вывод отчета об индексации
+        /// </summary>
+        public void PrintReport()
+        {
+            Console.WriteLine($"\n=== Отчет об индексации (директория: {_directoryPath}) ===");
+            Console.WriteLine($"Всего ключевых слов: {_index.Count}");
+
+            int totalEntries = 0;
+            foreach (string keyword in _index.Keys)
+            {
+                int count = _index[keyword].Count;
+                totalEntries += count;
+                Console.WriteLine($"  {keyword}: {count} вхождений в файлах");
+            }
+
+            Console.WriteLine($"Всего записей в индексе: {totalEntries}");
+
+            // Вывод подробной информации для каждого ключевого слова
+            Console.WriteLine("\nДетальная информация:");
+            foreach (string keyword in _index.Keys)
+            {
+                Console.WriteLine($"\nКлючевое слово: '{keyword}'");
+                foreach (IndexEntry entry in _index[keyword])
+                {
+                    Console.WriteLine($"  - {entry.FileName} (найдено: {entry.Occurrences} раз)");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Класс записи индекса
+        /// </summary>
+        public class IndexEntry
+        {
+            public string FilePath { get; set; }
+            public string FileName { get; set; }
+            public string Keyword { get; set; }
+            public int Occurrences { get; set; }
+            public string Preview { get; set; }
+
+            public override string ToString()
+            {
+                return $"Файл: {FileName}, Слово: '{Keyword}', Найдено: {Occurrences} раз";
+            }
+        }
+    }
+
+    /// <summary>
+    /// Консольный редактор текстовых файлов
+    /// </summary>
+    class Program
+    {
+        static TextEditor _editor = new TextEditor();
+        static FileSearch _search = new FileSearch();
+        static FileIndexer _indexer = new FileIndexer();
+
+        static void Main(string[] args)
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.Title = "Система работы с текстовыми файлами";
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║           СИСТЕМА РАБОТЫ С ТЕКСТОВЫМИ ФАЙЛАМИ               ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            bool exit = false;
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                      ГЛАВНОЕ МЕНЮ                            ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine("  1. Текстовый редактор");
+                Console.WriteLine("  2. Поиск файлов по ключевым словам");
+                Console.WriteLine("  3. Индексация файлов");
+                Console.WriteLine("  4. Работа с сериализацией");
+                Console.WriteLine("  5. Выйти");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                switch (choice)
+                {
+                    case "1":
+                        TextEditorMenu();
+                        break;
+                    case "2":
+                        SearchMenu();
+                        break;
+                    case "3":
+                        IndexerMenu();
+                        break;
+                    case "4":
+                        SerializationMenu();
+                        break;
+                    case "5":
+                        exit = true;
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("\n  До свидания!");
+                        Console.ResetColor();
+                        break;
+                    default:
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("\n  Неверный выбор! Нажмите любую клавишу...");
+                        Console.ResetColor();
+                        Console.ReadKey();
+                        break;
+                }
+            }
+        }
+
+        static void TextEditorMenu()
+        {
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                      ТЕКСТОВЫЙ РЕДАКТОР                      ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine($"  Текущий файл: {_editor.CurrentFile.FileName}");
+                Console.WriteLine($"  Содержимое:  {_editor.GetContentPreview(60)}");
+                Console.WriteLine($"  Размер:      {_editor.CurrentFile.Content.Length} символов");
+                Console.WriteLine($"  Состояний:   {_editor.GetHistoryInfo().Split('\n').Length - 2}");
+                Console.WriteLine();
+                Console.WriteLine("  1. Загрузить файл");
+                Console.WriteLine("  2. Создать новый файл");
+                Console.WriteLine("  3. Просмотреть содержимое");
+                Console.WriteLine("  4. Редактировать содержимое");
+                Console.WriteLine("  5. Вставить текст");
+                Console.WriteLine("  6. Удалить текст");
+                Console.WriteLine("  7. Отменить (Ctrl+Z)");
+                Console.WriteLine("  8. Повторить (Ctrl+Y)");
+                Console.WriteLine("  9. Сохранить файл");
+                Console.WriteLine("  10. Сохранить как");
+                Console.WriteLine("  11. История изменений");
+                Console.WriteLine("  12. Назад в главное меню");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                try
+                {
+                    switch (choice)
+                    {
+                        case "1":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ЗАГРУЗКА ФАЙЛА                         ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь к файлу: ");
+                            string path = Console.ReadLine();
+
+                            if (string.IsNullOrWhiteSpace(path))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  Ошибка: путь не может быть пустым!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            _editor.LoadFile(path);
+                            break;
+
+                        case "2":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      СОЗДАНИЕ ФАЙЛА                         ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите имя файла (без расширения): ");
+                            string name = Console.ReadLine();
+
+                            if (string.IsNullOrWhiteSpace(name))
+                                name = "Новый файл";
+
+                            _editor.NewFile(name);
+                            break;
+
+                        case "3":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                  СОДЕРЖИМОЕ ФАЙЛА                           ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.WriteLine(new string('═', 70));
+                            Console.WriteLine(_editor.CurrentFile.Content);
+                            Console.WriteLine(new string('═', 70));
+                            Console.WriteLine();
+                            Console.WriteLine($"  Всего символов: {_editor.CurrentFile.Content.Length}");
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "4":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      РЕДАКТИРОВАНИЕ                          ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.WriteLine("  Введите новое содержимое (для завершения введите пустую строку):");
+                            Console.WriteLine(new string('═', 70));
+
+                            List<string> lines = new List<string>();
+                            string line;
+                            while ((line = Console.ReadLine()) != null && line != "")
+                            {
+                                lines.Add(line);
+                            }
+
+                            if (lines.Count > 0)
+                            {
+                                _editor.SetContent(string.Join(Environment.NewLine, lines));
+                                Console.ForegroundColor = ConsoleColor.Green;
+                                Console.WriteLine("\n  ✅ Содержимое обновлено!");
+                                Console.ResetColor();
+                            }
+                            else
+                            {
+                                Console.ForegroundColor = ConsoleColor.Yellow;
+                                Console.WriteLine("\n  ⚠️ Изменений не внесено.");
+                                Console.ResetColor();
+                            }
+
+                            Console.ReadKey();
+                            break;
+
+                        case "5":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ВСТАВКА ТЕКСТА                          ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите текст для вставки: ");
+                            string insertText = Console.ReadLine();
+                            Console.Write("  Введите позицию (или Enter для вставки в конец): ");
+                            string posInput = Console.ReadLine();
+                            int position = string.IsNullOrEmpty(posInput) ? -1 : int.Parse(posInput);
+                            _editor.InsertText(insertText, position);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Текст вставлен!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "6":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      УДАЛЕНИЕ ТЕКСТА                         ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите начальную позицию: ");
+                            int start = int.Parse(Console.ReadLine());
+                            Console.Write("  Введите длину удаляемого текста: ");
+                            int length = int.Parse(Console.ReadLine());
+                            _editor.DeleteText(start, length);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Текст удален!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "7":
+                            if (_editor.Undo())
+                            {
+                                Console.ForegroundColor = ConsoleColor.Green;
+                                Console.WriteLine("\n  ✅ Отменено последнее действие!");
+                                Console.ResetColor();
+                            }
+                            else
+                            {
+                                Console.ForegroundColor = ConsoleColor.Yellow;
+                                Console.WriteLine("\n  ⚠️ Нет действий для отмены.");
+                                Console.ResetColor();
+                            }
+                            Console.ReadKey();
+                            break;
+
+                        case "8":
+                            if (_editor.Redo())
+                            {
+                                Console.ForegroundColor = ConsoleColor.Green;
+                                Console.WriteLine("\n  ✅ Повторено отмененное действие!");
+                                Console.ResetColor();
+                            }
+                            else
+                            {
+                                Console.ForegroundColor = ConsoleColor.Yellow;
+                                Console.WriteLine("\n  ⚠️ Нет действий для повтора.");
+                                Console.ResetColor();
+                            }
+                            Console.ReadKey();
+                            break;
+
+                        case "9":
+                            _editor.SaveFile();
+                            break;
+
+                        case "10":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      СОХРАНЕНИЕ КАК                          ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь для сохранения: ");
+                            string savePath = Console.ReadLine();
+                            _editor.SaveFile(savePath);
+                            break;
+
+                        case "11":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                    ИСТОРИЯ ИЗМЕНЕНИЙ                        ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.WriteLine(_editor.GetHistoryInfo());
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "12":
+                            exit = true;
+                            break;
+
+                        default:
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("\n  Неверный выбор!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+                    }
+                }
+                catch (FileNotFoundException ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+                catch (NotSupportedException ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+            }
+        }
+
+        static void SearchMenu()
+        {
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                  ПОИСК ФАЙЛОВ ПО КЛЮЧЕВЫМ СЛОВАМ             ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine($"  Ключевые слова: {(_search.Keywords.Count > 0 ? string.Join(", ", _search.Keywords) : "(не заданы)")}");
+                Console.WriteLine();
+                Console.WriteLine("  1. Добавить ключевое слово");
+                Console.WriteLine("  2. Удалить ключевое слово");
+                Console.WriteLine("  3. Показать все ключевые слова");
+                Console.WriteLine("  4. Выполнить поиск в директории");
+                Console.WriteLine("  5. Назад в главное меню");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                try
+                {
+                    switch (choice)
+                    {
+                        case "1":
+                            Console.Write("  Введите ключевое слово: ");
+                            string keyword = Console.ReadLine();
+                            _search.AddKeyword(keyword);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine($"\n  ✅ Ключевое слово '{keyword}' добавлено!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "2":
+                            Console.Write("  Введите ключевое слово для удаления: ");
+                            string removeKeyword = Console.ReadLine();
+                            _search.RemoveKeyword(removeKeyword);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine($"\n  ✅ Ключевое слово '{removeKeyword}' удалено!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "3":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ВСЕ КЛЮЧЕВЫЕ СЛОВА                      ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+
+                            if (_search.Keywords.Count == 0)
+                            {
+                                Console.WriteLine("  Ключевые слова не заданы.");
+                            }
+                            else
+                            {
+                                foreach (string kw in _search.Keywords)
+                                {
+                                    Console.WriteLine($"  • {kw}");
+                                }
+                            }
+
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "4":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ПОИСК В ДИРЕКТОРИИ                     ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь к директории: ");
+                            string dirPath = Console.ReadLine();
+
+                            if (!Directory.Exists(dirPath))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  ❌ Директория не найдена!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            Console.Write("  Включить поддиректории? (y/n): ");
+                            bool recursive = Console.ReadLine().ToLower() == "y";
+
+                            Console.WriteLine("\n  Поиск выполняется...");
+                            List<FileSearch.SearchResult> results = _search.SearchInDirectory(dirPath, recursive);
+
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine($"║               РЕЗУЛЬТАТЫ ПОИСКА (найдено: {results.Count})              ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+
+                            if (results.Count == 0)
+                            {
+                                Console.WriteLine("  Файлы не найдены.");
+                            }
+                            else
+                            {
+                                foreach (var result in results)
+                                {
+                                    Console.WriteLine($"  📄 {result}");
+                                    Console.WriteLine($"     Превью: {result.GetPreview(150)}");
+                                    Console.WriteLine(new string('─', 70));
+                                }
+                            }
+
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "5":
+                            exit = true;
+                            break;
+
+                        default:
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("\n  Неверный выбор!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+            }
+        }
+
+        static void IndexerMenu()
+        {
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                      ИНДЕКСАЦИЯ ФАЙЛОВ                       ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine("  1. Выполнить индексацию директории");
+                Console.WriteLine("  2. Показать отчет об индексации");
+                Console.WriteLine("  3. Поиск по индексу");
+                Console.WriteLine("  4. Назад в главное меню");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                try
+                {
+                    switch (choice)
+                    {
+                        case "1":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ИНДЕКСАЦИЯ ДИРЕКТОРИИ                   ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь к директории: ");
+                            string dirPath = Console.ReadLine();
+
+                            if (!Directory.Exists(dirPath))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  ❌ Директория не найдена!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            Console.Write("  Введите ключевые слова через запятую: ");
+                            string keywordsInput = Console.ReadLine();
+                            string[] keywords = keywordsInput.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                                                             .Select(k => k.Trim())
+                                                             .Where(k => !string.IsNullOrWhiteSpace(k))
+                                                             .ToArray();
+
+                            if (keywords.Length == 0)
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  ❌ Не введено ни одного ключевого слова!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            Console.WriteLine("\n  Индексация выполняется...");
+                            _indexer.IndexDirectory(dirPath, keywords);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Индексация завершена!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "2":
+                            Console.Clear();
+                            _indexer.PrintReport();
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "3":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                      ПОИСК ПО ИНДЕКСУ                        ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите ключевое слово для поиска: ");
+                            string searchKeyword = Console.ReadLine();
+
+                            var results = _indexer.Search(searchKeyword);
+                            Console.WriteLine($"\n  Результаты поиска для '{searchKeyword}':");
+                            Console.WriteLine(new string('═', 70));
+
+                            if (results.Count == 0)
+                            {
+                                Console.ForegroundColor = ConsoleColor.Yellow;
+                                Console.WriteLine("  Совпадений не найдено.");
+                                Console.ResetColor();
+                            }
+                            else
+                            {
+                                foreach (var entry in results)
+                                {
+                                    Console.WriteLine($"  📄 {entry}");
+                                    Console.WriteLine($"     Превью: {entry.Preview}");
+                                    Console.WriteLine(new string('─', 70));
+                                }
+                            }
+
+                            Console.WriteLine();
+                            Console.WriteLine("  Нажмите любую клавишу для продолжения...");
+                            Console.ReadKey();
+                            break;
+
+                        case "4":
+                            exit = true;
+                            break;
+
+                        default:
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("\n  Неверный выбор!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+            }
+        }
+
+        static void SerializationMenu()
+        {
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║                    СЕРИАЛИЗАЦИЯ ФАЙЛОВ                       ║");
+                Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine("  1. Сохранить текущий файл в бинарном формате");
+                Console.WriteLine("  2. Загрузить файл из бинарного формата");
+                Console.WriteLine("  3. Сохранить текущий файл в XML формате");
+                Console.WriteLine("  4. Загрузить файл из XML формата");
+                Console.WriteLine("  5. Назад в главное меню");
+                Console.WriteLine();
+                Console.Write("  Выберите опцию: ");
+
+                string choice = Console.ReadLine();
+
+                try
+                {
+                    switch (choice)
+                    {
+                        case "1":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                 СОХРАНЕНИЕ В БИНАРНОМ ФОРМАТЕ                 ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь для сохранения (с расширением .bin): ");
+                            string binPath = Console.ReadLine();
+                            _editor.CurrentFile.SaveBinary(binPath);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Файл сохранен в бинарном формате!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "2":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                 ЗАГРУЗКА ИЗ БИНАРНОГО ФОРМАТА                 ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь к бинарному файлу: ");
+                            string loadBinPath = Console.ReadLine();
+
+                            if (!File.Exists(loadBinPath))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  ❌ Файл не найден!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            TextFile loadedBinary = TextFile.LoadBinary(loadBinPath);
+                            _editor.NewFile(loadedBinary.FileName);
+                            _editor.SetContent(loadedBinary.Content);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Файл загружен из бинарного формата!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "3":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                   СОХРАНЕНИЕ В XML ФОРМАТЕ                    ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь для сохранения (с расширением .xml): ");
+                            string xmlPath = Console.ReadLine();
+                            _editor.CurrentFile.SaveXml(xmlPath);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Файл сохранен в XML формате!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "4":
+                            Console.Clear();
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("╔═══════════════════════════════════════════════════════════════╗");
+                            Console.WriteLine("║                    ЗАГРУЗКА ИЗ XML ФОРМАТА                    ║");
+                            Console.WriteLine("╚═══════════════════════════════════════════════════════════════╝");
+                            Console.ResetColor();
+                            Console.WriteLine();
+                            Console.Write("  Введите путь к XML файлу: ");
+                            string loadXmlPath = Console.ReadLine();
+
+                            if (!File.Exists(loadXmlPath))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine("\n  ❌ Файл не найден!");
+                                Console.ResetColor();
+                                Console.ReadKey();
+                                break;
+                            }
+
+                            TextFile loadedXml = TextFile.LoadXml(loadXmlPath);
+                            _editor.NewFile(loadedXml.FileName);
+                            _editor.SetContent(loadedXml.Content);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n  ✅ Файл загружен из XML формата!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+
+                        case "5":
+                            exit = true;
+                            break;
+
+                        default:
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("\n  Неверный выбор!");
+                            Console.ResetColor();
+                            Console.ReadKey();
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n  ❌ Ошибка: {ex.Message}");
+                    Console.ResetColor();
+                    Console.ReadKey();
+                }
+            }
+        }
+    }
+}
